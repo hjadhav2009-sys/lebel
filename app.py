@@ -10,6 +10,11 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, simpledialog
 
+import amazon_label_renderer
+import amazon_reader
+import amazon_rules
+import amazon_validation
+
 try:
     import pandas as pd
 except Exception:
@@ -24,7 +29,7 @@ except Exception:
     mm = 2.834645669291339
     code128 = None
 
-APP_VERSION = "V12 Advanced"
+APP_VERSION = "V13 Advanced"
 APP_NAME = f"M Men Style - Marketplace Label Generator {APP_VERSION}"
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
@@ -316,9 +321,18 @@ class App(tk.Tk):
         self.minsize(1100, 700)
         self.branches = load_branches()
         self.files = []
+        self.amazon_workbook = None
+        self.amazon_rows = []
+        self.amazon_manual_mrp = {}
+        self.amazon_qty_overrides = {}
+        self.amazon_mapping = amazon_rules.load_mapping_settings()
+        self.amazon_category_rules = amazon_rules.load_category_rules()
+        self.amazon_brand_rules = amazon_rules.load_brand_rules()
+        self.amazon_last_report = ""
         self.last_pdf = ""
         self.status_var = tk.StringVar(value="Ready")
         self.row_qty_var = tk.StringVar(value="1")
+        self.amazon_qty_var = tk.StringVar(value="1")
         self.change_format_var = tk.StringVar()
         self.build_ui()
         self.refresh_branches()
@@ -332,13 +346,16 @@ class App(tk.Tk):
         except Exception:
             pass
         nb = ttk.Notebook(self)
+        self.main_notebook = nb
         nb.pack(fill="both", expand=True, padx=8, pady=8)
         self.tab_gen = ttk.Frame(nb)
+        self.tab_amazon = ttk.Frame(nb)
         self.tab_set = ttk.Frame(nb)
         self.tab_map = ttk.Frame(nb)
-        nb.add(self.tab_gen, text="Generate Labels")
-        nb.add(self.tab_set, text="Branches & Settings")
-        nb.add(self.tab_map, text="Format Mapping")
+        nb.add(self.tab_gen, text="Flipkart Labels")
+        nb.add(self.tab_amazon, text="Amazon Labels")
+        nb.add(self.tab_set, text="Branch / Address Settings")
+        nb.add(self.tab_map, text="Format / Mapping Settings")
 
         toolbar = ttk.Frame(self.tab_gen)
         toolbar.pack(fill="x", padx=4, pady=4)
@@ -402,8 +419,92 @@ class App(tk.Tk):
         footer.pack(fill="x", padx=4, pady=4)
         ttk.Label(footer, textvariable=self.status_var).pack(side="left")
         ttk.Label(footer, text="Print rule: V12 2UP roll = PDF 106mm x 50mm, gap 3mm. Print Actual Size / 100% / No Scaling.").pack(side="right")
+        self.build_amazon_tab()
         self.build_settings_tab()
         self.build_format_tab()
+
+    def build_amazon_tab(self):
+        toolbar = ttk.Frame(self.tab_amazon)
+        toolbar.pack(fill="x", padx=4, pady=4)
+        ttk.Button(toolbar, text="Upload Amazon Workbook", command=self.upload_amazon_workbook).pack(side="left", padx=4)
+        ttk.Button(toolbar, text="Clear", command=self.clear_amazon).pack(side="left", padx=4)
+        ttk.Button(toolbar, text="Preview Selected", command=self.preview_selected_amazon).pack(side="left", padx=12)
+        ttk.Button(toolbar, text="Validate Amazon", command=self.validate_amazon_clicked).pack(side="left", padx=4)
+        ttk.Button(toolbar, text="Fix Blocking Rows", command=self.fix_amazon_blockers_dialog).pack(side="left", padx=4)
+        self.amazon_generate_btn = ttk.Button(toolbar, text="Generate Amazon PDF", command=self.generate_amazon_pdf_clicked)
+        self.amazon_generate_btn.pack(side="left", padx=4)
+        ttk.Button(toolbar, text="Open Last PDF", command=self.open_last_pdf).pack(side="left", padx=4)
+        ttk.Button(toolbar, text="Print Last PDF", command=self.print_last_pdf).pack(side="left", padx=4)
+        ttk.Label(toolbar, text="Branch:").pack(side="left", padx=(18, 4))
+        self.amazon_branch_var = tk.StringVar(value=self.amazon_mapping.get("selected_branch", ""))
+        self.amazon_branch_combo = ttk.Combobox(toolbar, textvariable=self.amazon_branch_var, state="readonly", width=24)
+        self.amazon_branch_combo.pack(side="left")
+        self.amazon_branch_combo.bind("<<ComboboxSelected>>", lambda e: self.save_amazon_selected_branch())
+
+        self.amazon_workbook_var = tk.StringVar(value="No Amazon workbook loaded")
+        ttk.Label(self.tab_amazon, textvariable=self.amazon_workbook_var).pack(anchor="w", padx=8, pady=(0, 4))
+
+        body = ttk.Panedwindow(self.tab_amazon, orient="horizontal")
+        body.pack(fill="both", expand=True, padx=4, pady=4)
+        left = ttk.Frame(body)
+        right = ttk.Frame(body)
+        body.add(left, weight=3)
+        body.add(right, weight=2)
+
+        ttk.Label(left, text="Amazon Validation").pack(anchor="w")
+        table_frame = ttk.Frame(left)
+        table_frame.pack(fill="both", expand=True, pady=(3, 0))
+        self.amazon_tree_cols = ("status", "sku", "asin", "fnsku", "title", "heading", "brand", "mrp", "qty", "error")
+        self.amazon_tree = ttk.Treeview(table_frame, columns=self.amazon_tree_cols, show="headings", height=22)
+        headings = {
+            "status": "Status",
+            "sku": "SKU",
+            "asin": "ASIN",
+            "fnsku": "FNSKU",
+            "title": "Title",
+            "heading": "Main Heading",
+            "brand": "Brand",
+            "mrp": "MRP",
+            "qty": "Print Qty",
+            "error": "Error message",
+        }
+        widths = {
+            "status": 70,
+            "sku": 135,
+            "asin": 105,
+            "fnsku": 125,
+            "title": 260,
+            "heading": 135,
+            "brand": 110,
+            "mrp": 80,
+            "qty": 80,
+            "error": 260,
+        }
+        for col in self.amazon_tree_cols:
+            self.amazon_tree.heading(col, text=headings[col])
+            self.amazon_tree.column(col, width=widths[col], anchor="w", stretch=True)
+        yscroll = ttk.Scrollbar(table_frame, orient="vertical", command=self.amazon_tree.yview)
+        xscroll = ttk.Scrollbar(table_frame, orient="horizontal", command=self.amazon_tree.xview)
+        self.amazon_tree.configure(yscrollcommand=yscroll.set, xscrollcommand=xscroll.set)
+        self.amazon_tree.grid(row=0, column=0, sticky="nsew")
+        yscroll.grid(row=0, column=1, sticky="ns")
+        xscroll.grid(row=1, column=0, sticky="ew")
+        table_frame.rowconfigure(0, weight=1)
+        table_frame.columnconfigure(0, weight=1)
+        self.amazon_tree.bind("<<TreeviewSelect>>", self.on_amazon_row_select)
+        self.amazon_tree.bind("<Double-1>", self.quick_set_amazon_qty)
+
+        qtybar = ttk.Frame(left)
+        qtybar.pack(fill="x", pady=6)
+        ttk.Label(qtybar, text="Print Qty for selected Amazon SKU:").pack(side="left")
+        ttk.Entry(qtybar, textvariable=self.amazon_qty_var, width=8).pack(side="left", padx=5)
+        ttk.Button(qtybar, text="Apply Qty to Selected SKU", command=self.apply_amazon_row_qty).pack(side="left", padx=4)
+        ttk.Button(qtybar, text="Apply Qty to All Rows", command=self.apply_amazon_qty_to_all_rows).pack(side="left", padx=4)
+        ttk.Button(qtybar, text="Reset Qty from Shipped", command=self.reset_amazon_qty_from_shipped).pack(side="left", padx=4)
+
+        ttk.Label(right, text="Amazon Label Preview").pack(anchor="w")
+        self.amazon_preview = tk.Canvas(right, bg="#f4f4f4", highlightthickness=1, highlightbackground="#cccccc")
+        self.amazon_preview.pack(fill="both", expand=True, padx=6, pady=6)
 
     def build_settings_tab(self):
         top = ttk.Frame(self.tab_set)
@@ -447,7 +548,14 @@ class App(tk.Tk):
         ttk.Label(self.tab_set, text="Customer Care removed. This branch block is fixed for all labels from this branch.").pack(anchor="w", padx=14, pady=8)
 
     def build_format_tab(self):
-        top = ttk.Frame(self.tab_map)
+        settings_nb = ttk.Notebook(self.tab_map)
+        settings_nb.pack(fill="both", expand=True, padx=6, pady=6)
+        self.flipkart_map_frame = ttk.Frame(settings_nb)
+        self.amazon_map_frame = ttk.Frame(settings_nb)
+        settings_nb.add(self.flipkart_map_frame, text="Flipkart Formats")
+        settings_nb.add(self.amazon_map_frame, text="Amazon Settings")
+
+        top = ttk.Frame(self.flipkart_map_frame)
         top.pack(fill="x", padx=8, pady=8)
         ttk.Label(top, text="Format:").pack(side="left")
         self.map_format_var = tk.StringVar()
@@ -460,8 +568,8 @@ class App(tk.Tk):
                      "Create/select format, write field lines as Label = column_header. Example: Color = color. "
                      "Detection works by file name keywords first, then matching Excel/CSV column headers. "
                      "If auto-detect is wrong, choose the file in Generate Labels, select Change selected format, then Apply.")
-        ttk.Label(self.tab_map, text=help_text, justify="left").pack(anchor="w", padx=14, pady=6)
-        form = ttk.Frame(self.tab_map)
+        ttk.Label(self.flipkart_map_frame, text=help_text, justify="left").pack(anchor="w", padx=14, pady=6)
+        form = ttk.Frame(self.flipkart_map_frame)
         form.pack(fill="both", expand=True, padx=8, pady=8)
         self.format_entry = {}
         for i, (key, label) in enumerate([("key", "Format Key"), ("title", "Label Title"), ("generic", "Generic Name")]):
@@ -475,6 +583,182 @@ class App(tk.Tk):
         form.columnconfigure(1, weight=1)
         form.rowconfigure(3, weight=1)
         self.refresh_format_combos()
+        self.build_amazon_settings_tab()
+
+    def build_amazon_settings_tab(self):
+        parent = self.amazon_map_frame
+        top = ttk.Frame(parent)
+        top.pack(fill="x", padx=8, pady=8)
+        ttk.Label(top, text="Default Amazon Branch:").pack(side="left")
+        self.amazon_settings_branch_var = tk.StringVar(value=self.amazon_mapping.get("selected_branch", ""))
+        self.amazon_settings_branch_combo = ttk.Combobox(top, textvariable=self.amazon_settings_branch_var, state="readonly", width=30)
+        self.amazon_settings_branch_combo.pack(side="left", padx=6)
+        ttk.Button(top, text="Save Amazon Settings", command=self.save_amazon_settings).pack(side="left", padx=6)
+
+        rules_frame = ttk.Frame(parent)
+        rules_frame.pack(fill="x", padx=8, pady=4)
+
+        category_box = ttk.LabelFrame(rules_frame, text="Category Keyword Rules")
+        category_box.pack(side="left", fill="both", expand=True, padx=(0, 6))
+        category_top = ttk.Frame(category_box)
+        category_top.pack(fill="x", padx=6, pady=6)
+        ttk.Label(category_top, text="Main Heading:").pack(side="left")
+        self.amazon_category_var = tk.StringVar()
+        self.amazon_category_combo = ttk.Combobox(category_top, textvariable=self.amazon_category_var, state="readonly", width=28)
+        self.amazon_category_combo.pack(side="left", padx=5)
+        self.amazon_category_combo.bind("<<ComboboxSelected>>", lambda e: self.load_amazon_category_keywords())
+        ttk.Label(category_top, text="Add:").pack(side="left", padx=(10, 3))
+        self.amazon_new_category_var = tk.StringVar()
+        ttk.Entry(category_top, textvariable=self.amazon_new_category_var, width=20).pack(side="left")
+        ttk.Button(category_top, text="Add Category", command=self.add_amazon_category).pack(side="left", padx=5)
+        self.amazon_keywords_text = tk.Text(category_box, height=7, width=58)
+        self.amazon_keywords_text.pack(fill="both", expand=True, padx=6, pady=(0, 6))
+        ttk.Button(category_box, text="Save Category Keywords", command=self.save_amazon_category_keywords).pack(anchor="e", padx=6, pady=(0, 6))
+
+        brand_box = ttk.LabelFrame(rules_frame, text="Brand List")
+        brand_box.pack(side="left", fill="both", expand=True, padx=(6, 0))
+        self.amazon_brand_text = tk.Text(brand_box, height=9, width=38)
+        self.amazon_brand_text.pack(fill="both", expand=True, padx=6, pady=6)
+        ttk.Button(brand_box, text="Save Brand List", command=self.save_amazon_brand_list).pack(anchor="e", padx=6, pady=(0, 6))
+
+        mapping_box = ttk.LabelFrame(parent, text="Column Mapping")
+        mapping_box.pack(fill="both", expand=True, padx=8, pady=8)
+        self.amazon_mapping_vars = {"consignment": {}, "master": {}}
+        self.amazon_mapping_combos = {"consignment": {}, "master": {}}
+        consignment_fields = [
+            ("merchant_sku", "Merchant SKU"),
+            ("title", "Title"),
+            ("asin", "ASIN"),
+            ("fnsku", "FNSKU"),
+            ("shipped_qty", "Shipped Qty"),
+            ("condition", "Condition"),
+        ]
+        master_fields = [
+            ("item_name", "Item Name"),
+            ("item_description", "Item Description"),
+            ("seller_sku", "Seller SKU"),
+            ("asin", "ASIN"),
+            ("product_id", "Product ID"),
+            ("mrp", "MRP"),
+        ]
+        left = ttk.Frame(mapping_box)
+        right = ttk.Frame(mapping_box)
+        left.pack(side="left", fill="both", expand=True, padx=8, pady=8)
+        right.pack(side="left", fill="both", expand=True, padx=8, pady=8)
+        ttk.Label(left, text="Amazon Consignment File").grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 4))
+        ttk.Label(right, text="Weekly Master Listing").grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 4))
+        for i, (field, label) in enumerate(consignment_fields, start=1):
+            ttk.Label(left, text=label).grid(row=i, column=0, sticky="w", padx=4, pady=3)
+            var = tk.StringVar(value=self.amazon_mapping.get("consignment", {}).get(field, ""))
+            combo = ttk.Combobox(left, textvariable=var, values=self.amazon_column_values("consignment"), width=38)
+            combo.grid(row=i, column=1, sticky="ew", padx=4, pady=3)
+            self.amazon_mapping_vars["consignment"][field] = var
+            self.amazon_mapping_combos["consignment"][field] = combo
+        for i, (field, label) in enumerate(master_fields, start=1):
+            ttk.Label(right, text=label).grid(row=i, column=0, sticky="w", padx=4, pady=3)
+            var = tk.StringVar(value=self.amazon_mapping.get("master", {}).get(field, ""))
+            combo = ttk.Combobox(right, textvariable=var, values=self.amazon_column_values("master"), width=38)
+            combo.grid(row=i, column=1, sticky="ew", padx=4, pady=3)
+            self.amazon_mapping_vars["master"][field] = var
+            self.amazon_mapping_combos["master"][field] = combo
+        left.columnconfigure(1, weight=1)
+        right.columnconfigure(1, weight=1)
+
+        self.refresh_amazon_rule_widgets()
+
+    def amazon_column_values(self, group):
+        defaults = list(amazon_rules.DEFAULT_MAPPING_SETTINGS.get(group, {}).values())
+        detected = []
+        if self.amazon_workbook:
+            detected = self.amazon_workbook.get("detected_columns", {}).get(group, [])
+        return amazon_rules.unique_list(defaults + detected)
+
+    def refresh_amazon_mapping_column_values(self):
+        if not hasattr(self, "amazon_mapping_combos"):
+            return
+        for group, combos in self.amazon_mapping_combos.items():
+            vals = self.amazon_column_values(group)
+            for combo in combos.values():
+                combo["values"] = vals
+
+    def refresh_amazon_rule_widgets(self):
+        if not hasattr(self, "amazon_category_combo"):
+            return
+        self.amazon_category_rules = amazon_rules.load_category_rules()
+        self.amazon_brand_rules = amazon_rules.load_brand_rules()
+        categories = self.amazon_category_rules.get("categories", amazon_rules.DEFAULT_CATEGORIES)
+        self.amazon_category_combo["values"] = categories
+        if not self.amazon_category_var.get() and categories:
+            self.amazon_category_var.set(categories[0])
+        self.load_amazon_category_keywords()
+        self.amazon_brand_text.delete("1.0", "end")
+        self.amazon_brand_text.insert("1.0", "\n".join(self.amazon_brand_rules.get("brands", amazon_rules.DEFAULT_BRANDS)))
+        self.refresh_amazon_mapping_column_values()
+
+    def load_amazon_category_keywords(self):
+        if not hasattr(self, "amazon_keywords_text"):
+            return
+        category = self.amazon_category_var.get()
+        keywords = self.amazon_category_rules.get("keyword_rules", {}).get(category, [])
+        self.amazon_keywords_text.delete("1.0", "end")
+        self.amazon_keywords_text.insert("1.0", "\n".join(keywords))
+
+    def save_amazon_category_keywords(self):
+        category = self.amazon_category_var.get().strip()
+        if not category:
+            messagebox.showwarning("No category", "Choose a Main Heading first.")
+            return
+        keywords = amazon_rules.split_keywords(self.amazon_keywords_text.get("1.0", "end"))
+        self.amazon_category_rules.setdefault("keyword_rules", {})[category] = keywords
+        if category not in self.amazon_category_rules.setdefault("categories", []):
+            self.amazon_category_rules["categories"].append(category)
+        amazon_rules.save_category_rules(self.amazon_category_rules)
+        self.rebuild_amazon_rows()
+        self.status_var.set("Amazon category keyword rules saved.")
+
+    def add_amazon_category(self):
+        category = self.amazon_new_category_var.get().strip()
+        if not category:
+            return
+        self.amazon_category_rules = amazon_rules.load_category_rules()
+        if category not in self.amazon_category_rules.setdefault("categories", []):
+            self.amazon_category_rules["categories"].append(category)
+            self.amazon_category_rules.setdefault("keyword_rules", {}).setdefault(category, [])
+            amazon_rules.save_category_rules(self.amazon_category_rules)
+        self.amazon_new_category_var.set("")
+        self.amazon_category_var.set(category)
+        self.refresh_amazon_rule_widgets()
+        self.status_var.set(f"Amazon category added: {category}")
+
+    def save_amazon_brand_list(self):
+        brands = [line.strip() for line in self.amazon_brand_text.get("1.0", "end").splitlines() if line.strip()]
+        self.amazon_brand_rules["brands"] = amazon_rules.unique_list(brands)
+        amazon_rules.save_brand_rules(self.amazon_brand_rules)
+        self.rebuild_amazon_rows()
+        self.status_var.set("Amazon brand list saved.")
+
+    def save_amazon_settings(self):
+        if hasattr(self, "amazon_mapping_vars"):
+            for group, fields in self.amazon_mapping_vars.items():
+                self.amazon_mapping.setdefault(group, {})
+                for field, var in fields.items():
+                    self.amazon_mapping[group][field] = var.get().strip()
+        if hasattr(self, "amazon_settings_branch_var"):
+            self.amazon_mapping["selected_branch"] = self.amazon_settings_branch_var.get().strip()
+            if self.amazon_mapping["selected_branch"]:
+                self.amazon_branch_var.set(self.amazon_mapping["selected_branch"])
+        amazon_rules.save_mapping_settings(self.amazon_mapping)
+        self.rebuild_amazon_rows()
+        self.status_var.set("Amazon mapping settings saved.")
+
+    def save_amazon_selected_branch(self):
+        if not hasattr(self, "amazon_branch_var"):
+            return
+        self.amazon_mapping["selected_branch"] = self.amazon_branch_var.get().strip()
+        amazon_rules.save_mapping_settings(self.amazon_mapping)
+        if hasattr(self, "amazon_settings_branch_var"):
+            self.amazon_settings_branch_var.set(self.amazon_branch_var.get())
+        self.rebuild_amazon_rows()
 
     def refresh_format_combos(self):
         vals = list(FORMATS.keys())
@@ -556,14 +840,28 @@ class App(tk.Tk):
         names = list(self.branches.keys()) or ["Mumbai Branch"]
         self.branch_combo["values"] = names
         self.settings_branch_combo["values"] = names
+        if hasattr(self, "amazon_branch_combo"):
+            self.amazon_branch_combo["values"] = names
+        if hasattr(self, "amazon_settings_branch_combo"):
+            self.amazon_settings_branch_combo["values"] = names
         if self.branch_var.get() not in names:
             self.branch_var.set(names[0])
         if self.settings_branch_var.get() not in names:
             self.settings_branch_var.set(names[0])
+        preferred_amazon = self.amazon_mapping.get("selected_branch", "")
+        if hasattr(self, "amazon_branch_var") and self.amazon_branch_var.get() not in names:
+            self.amazon_branch_var.set(preferred_amazon if preferred_amazon in names else names[0])
+        if hasattr(self, "amazon_settings_branch_var") and self.amazon_settings_branch_var.get() not in names:
+            self.amazon_settings_branch_var.set(self.amazon_branch_var.get() if hasattr(self, "amazon_branch_var") else names[0])
         self.load_branch_form()
 
     def current_branch(self):
         return self.branches.get(self.branch_var.get()) or next(iter(self.branches.values()))
+
+    def current_amazon_branch(self):
+        if hasattr(self, "amazon_branch_var"):
+            return self.branches.get(self.amazon_branch_var.get()) or self.current_branch()
+        return self.current_branch()
 
     def load_branch_form(self):
         b = self.branches.get(self.settings_branch_var.get(), {})
@@ -621,6 +919,13 @@ class App(tk.Tk):
         errors = []
         for p in paths:
             try:
+                if Path(p).suffix.lower() in (".xlsx", ".xls"):
+                    try:
+                        if amazon_reader.detect_amazon_workbook(p, self.amazon_mapping):
+                            errors.append(f"{Path(p).name}: Amazon workbook detected. Use the Amazon Labels tab.")
+                            continue
+                    except Exception:
+                        pass
                 df = read_file(p)
                 fmt = detect_format(p, df)
                 qty = {int(i): detect_qty(df, r) for i, r in df.iterrows()}
@@ -806,9 +1111,459 @@ class App(tk.Tk):
         self.on_file_select_light(None)
         self.status_var.set("All print quantities set to 1 for selected file.")
 
+    def sync_amazon_mapping_from_widgets(self):
+        if not hasattr(self, "amazon_mapping_vars"):
+            return
+        for group, fields in self.amazon_mapping_vars.items():
+            self.amazon_mapping.setdefault(group, {})
+            for field, var in fields.items():
+                self.amazon_mapping[group][field] = var.get().strip()
+
+    def upload_amazon_workbook(self):
+        path = filedialog.askopenfilename(title="Select Amazon Excel workbook", filetypes=[("Excel Workbook", "*.xlsx *.xls"), ("All Files", "*.*")])
+        if path:
+            self.load_amazon_path(path)
+
+    def load_amazon_path(self, path):
+        self.sync_amazon_mapping_from_widgets()
+        self.status_var.set("Loading Amazon workbook. Please wait...")
+        self.update_idletasks()
+        try:
+            workbook = amazon_reader.load_amazon_workbook(path, self.amazon_mapping)
+            amazon_rules.merge_sheet_options(workbook.get("sheet_categories", []), workbook.get("sheet_brands", []))
+            self.amazon_workbook = workbook
+            self.amazon_manual_mrp = {}
+            self.amazon_qty_overrides = {}
+            self.refresh_amazon_rule_widgets()
+            self.refresh_amazon_mapping_column_values()
+            self.rebuild_amazon_rows(preserve_quantities=False)
+            self.amazon_workbook_var.set(
+                f"Loaded: {Path(path).name} | label sheet: {workbook.get('consignment_sheet')} | master sheet: {workbook.get('master_sheet') or 'not found'}"
+            )
+            self.status_var.set(f"Amazon workbook loaded: {len(self.amazon_rows)} row(s).")
+        except Exception as e:
+            log(traceback.format_exc())
+            messagebox.showerror("Amazon load error", str(e))
+            self.status_var.set("Amazon workbook load failed.")
+
+    def clear_amazon(self):
+        self.amazon_workbook = None
+        self.amazon_rows = []
+        self.amazon_manual_mrp = {}
+        self.amazon_qty_overrides = {}
+        self.amazon_workbook_var.set("No Amazon workbook loaded")
+        for item in self.amazon_tree.get_children():
+            self.amazon_tree.delete(item)
+        self.amazon_preview.delete("all")
+        self.amazon_preview.create_text(30, 30, text="Upload Amazon workbook to preview", anchor="nw", fill="#777777", font=("Arial", 16, "bold"))
+        self.status_var.set("Cleared Amazon workbook.")
+
+    def rebuild_amazon_rows(self, preserve_quantities=True):
+        if not self.amazon_workbook:
+            return
+        if preserve_quantities:
+            for row in self.amazon_rows:
+                if row.get("row_key"):
+                    self.amazon_qty_overrides[row["row_key"]] = row.get("print_qty", "")
+        self.sync_amazon_mapping_from_widgets()
+        self.amazon_category_rules = amazon_rules.load_category_rules()
+        self.amazon_brand_rules = amazon_rules.load_brand_rules()
+        self.amazon_rows = amazon_validation.resolve_amazon_rows(
+            self.amazon_workbook,
+            self.amazon_mapping,
+            self.amazon_category_rules,
+            self.amazon_brand_rules,
+            manual_mrp=self.amazon_manual_mrp,
+            qty_overrides=self.amazon_qty_overrides,
+        )
+        amazon_validation.validate_amazon_rows(self.amazon_rows, self.current_amazon_branch())
+        self.refresh_amazon_table()
+
+    def refresh_amazon_table(self):
+        if not hasattr(self, "amazon_tree"):
+            return
+        for item in self.amazon_tree.get_children():
+            self.amazon_tree.delete(item)
+        self.amazon_tree.tag_configure("PASS", background="#eaf7ea")
+        self.amazon_tree.tag_configure("FAIL", background="#fdecec")
+        for idx, row in enumerate(self.amazon_rows):
+            values = (
+                row.get("status", ""),
+                row.get("merchant_sku", ""),
+                row.get("asin", ""),
+                row.get("fnsku", ""),
+                row.get("title", "")[:80],
+                row.get("main_heading", ""),
+                row.get("brand", ""),
+                row.get("mrp", ""),
+                row.get("print_qty", ""),
+                "; ".join(row.get("errors", [])),
+            )
+            self.amazon_tree.insert("", "end", iid=str(idx), values=values, tags=(row.get("status", ""),))
+        if self.amazon_rows and not self.amazon_tree.selection():
+            self.amazon_tree.selection_set("0")
+            self.on_amazon_row_select()
+
+    def validate_amazon_clicked(self):
+        if not self.amazon_workbook:
+            messagebox.showwarning("No Amazon workbook", "Upload an Amazon workbook first.")
+            return
+        self.rebuild_amazon_rows()
+        fail_count = sum(1 for row in self.amazon_rows if row.get("errors"))
+        if fail_count:
+            messagebox.showwarning("Amazon validation issues", f"{fail_count} row(s) have blocking issues. Use Fix Blocking Rows before generating PDF.")
+            self.status_var.set(f"Amazon validation found {fail_count} failing row(s).")
+        else:
+            messagebox.showinfo("Amazon validation PASS", "All Amazon rows passed validation.")
+            self.status_var.set("Amazon validation PASS.")
+
+    def selected_amazon_row_index(self):
+        sel = self.amazon_tree.selection()
+        if not sel:
+            return None
+        try:
+            idx = int(sel[0])
+            if 0 <= idx < len(self.amazon_rows):
+                return idx
+        except Exception:
+            pass
+        return None
+
+    def on_amazon_row_select(self, event=None):
+        idx = self.selected_amazon_row_index()
+        if idx is None:
+            return
+        self.amazon_qty_var.set(str(self.amazon_rows[idx].get("print_qty", "1")))
+
+    def apply_amazon_row_qty(self):
+        idx = self.selected_amazon_row_index()
+        if idx is None:
+            messagebox.showwarning("No Amazon row", "Select an Amazon row first.")
+            return
+        qty = amazon_validation.parse_positive_int(self.amazon_qty_var.get())
+        if qty <= 0:
+            messagebox.showwarning("Invalid quantity", "Print quantity must be greater than zero.")
+            return
+        row = self.amazon_rows[idx]
+        self.amazon_qty_overrides[row["row_key"]] = qty
+        row["print_qty"] = qty
+        amazon_validation.validate_amazon_rows(self.amazon_rows, self.current_amazon_branch())
+        self.refresh_amazon_table()
+        self.amazon_tree.selection_set(str(idx))
+        self.status_var.set(f"Amazon print quantity updated to {qty}.")
+
+    def quick_set_amazon_qty(self, event=None):
+        idx = self.selected_amazon_row_index()
+        if idx is None:
+            return
+        current = self.amazon_qty_var.get() or "1"
+        qty = simpledialog.askinteger("Set Amazon Print Quantity", "How many labels do you need for this selected SKU?", initialvalue=amazon_validation.parse_positive_int(current) or 1, minvalue=1, maxvalue=100000, parent=self)
+        if qty is None:
+            return
+        self.amazon_qty_var.set(str(qty))
+        self.apply_amazon_row_qty()
+
+    def apply_amazon_qty_to_all_rows(self):
+        if not self.amazon_rows:
+            return
+        qty = amazon_validation.parse_positive_int(self.amazon_qty_var.get())
+        if qty <= 0:
+            messagebox.showwarning("Invalid quantity", "Print quantity must be greater than zero.")
+            return
+        for row in self.amazon_rows:
+            self.amazon_qty_overrides[row["row_key"]] = qty
+            row["print_qty"] = qty
+        amazon_validation.validate_amazon_rows(self.amazon_rows, self.current_amazon_branch())
+        self.refresh_amazon_table()
+        self.status_var.set(f"All Amazon rows set to quantity {qty}.")
+
+    def reset_amazon_qty_from_shipped(self):
+        self.amazon_qty_overrides = {}
+        self.rebuild_amazon_rows(preserve_quantities=False)
+        self.status_var.set("Amazon quantities reset from Shipped column.")
+
+    def preview_selected_amazon(self):
+        idx = self.selected_amazon_row_index()
+        if idx is None:
+            messagebox.showwarning("No Amazon row", "Select an Amazon row first.")
+            return
+        self.draw_amazon_canvas_label(self.amazon_rows[idx], self.current_amazon_branch())
+        self.status_var.set("Amazon preview rendered.")
+
+    def draw_amazon_canvas_label(self, row, branch):
+        c = self.amazon_preview
+        c.delete("all")
+        W = max(c.winfo_width(), 560)
+        H = max(c.winfo_height(), 560)
+        size = min(W - 50, H - 62)
+        size = max(330, size)
+        x0 = max(18, (W - size) / 2)
+        y0 = 18
+        scale = size / 50.0
+        c.create_rectangle(x0, y0, x0 + size, y0 + size, fill="white", outline="black", width=2)
+        heading_font = min(28, max(16, int(2.55 * scale)))
+        brand_font = min(18, max(11, int(1.65 * scale)))
+        body_font = min(14, max(8, int(1.07 * scale)))
+        small_font = min(12, max(7, int(0.86 * scale)))
+        heading = row.get("main_heading", "")
+        brand = row.get("brand", "")
+        fnsku = row.get("fnsku", "")
+        c.create_text(x0 + size / 2, y0 + 1.3 * scale, text=heading[:34], anchor="n", font=("Arial", heading_font, "bold"))
+        c.create_text(x0 + size / 2, y0 + 5.1 * scale, text=brand[:42], anchor="n", font=("Arial", brand_font, "bold"))
+        c.create_line(x0 + 2.2 * scale, y0 + 7.0 * scale, x0 + size - 2.2 * scale, y0 + 7.0 * scale, width=2)
+        y = y0 + 8.6 * scale
+        lines = [
+            f"SKU No: {row.get('merchant_sku', '')}",
+            "Net Quantity: 1 N",
+            amazon_validation.format_mrp(row.get("mrp", "")),
+            f"Generic Name: {row.get('generic_name', '')}",
+            f"Title: {amazon_label_renderer.amazon_title_for_print(row.get('title', ''))}",
+        ]
+        for line in lines:
+            for part in amazon_label_renderer.wrap_text(line, 48)[:2]:
+                if y > y0 + 24.5 * scale:
+                    break
+                c.create_text(x0 + 2.7 * scale, y, text=part, anchor="nw", font=("Arial", body_font))
+                y += 1.42 * scale
+            y += 0.10 * scale
+        y = max(y, y0 + 26.0 * scale)
+        for i, line in enumerate(amazon_label_renderer.branch_address_lines(branch)):
+            font = ("Arial", small_font, "bold") if i == 0 else ("Arial", small_font)
+            for part in amazon_label_renderer.wrap_text(line, 52)[:2 if i in (1, 2) else 1]:
+                if y > y0 + 39.8 * scale:
+                    break
+                c.create_text(x0 + (2.7 if i == 0 else 3.5) * scale, y, text=part, anchor="nw", font=font)
+                y += 1.12 * scale
+        bx0 = x0 + 4.2 * scale
+        by0 = y0 + 41.4 * scale
+        bw = 41.5 * scale
+        bh = 5.9 * scale
+        seed = sum(ord(ch) for ch in fnsku)
+        for i in range(135):
+            if (i + seed) % 4 != 0:
+                xx = bx0 + i * bw / 135
+                c.create_line(xx, by0, xx, by0 + bh, width=1)
+        c.create_text(x0 + size / 2, y0 + 47.5 * scale, text=fnsku, anchor="n", font=("Arial", small_font))
+
+    def amazon_blocking_items(self):
+        items = []
+        for idx, row in enumerate(self.amazon_rows):
+            for error in row.get("errors", []):
+                items.append((idx, error))
+        return items
+
+    def fix_amazon_blockers_dialog(self):
+        if not self.amazon_workbook:
+            messagebox.showwarning("No Amazon workbook", "Upload an Amazon workbook first.")
+            return
+        self.rebuild_amazon_rows()
+        blockers = self.amazon_blocking_items()
+        if not blockers:
+            messagebox.showinfo("No blockers", "All Amazon rows are ready.")
+            return
+
+        win = tk.Toplevel(self)
+        win.title("Fix Amazon Blocking Rows")
+        win.geometry("1050x560")
+        win.transient(self)
+        win.grab_set()
+
+        cols = ("sku", "asin", "fnsku", "title", "missing")
+        tree = ttk.Treeview(win, columns=cols, show="headings", height=14)
+        widths = {"sku": 150, "asin": 120, "fnsku": 130, "title": 420, "missing": 190}
+        headings = {"sku": "SKU", "asin": "ASIN", "fnsku": "FNSKU", "title": "Title", "missing": "Missing field"}
+        for col in cols:
+            tree.heading(col, text=headings[col])
+            tree.column(col, width=widths[col], anchor="w")
+        tree.pack(fill="both", expand=True, padx=8, pady=8)
+
+        controls = ttk.Frame(win)
+        controls.pack(fill="x", padx=8, pady=8)
+        ttk.Label(controls, text="Main Heading:").grid(row=0, column=0, sticky="w", padx=4, pady=4)
+        category_var = tk.StringVar()
+        category_combo = ttk.Combobox(controls, textvariable=category_var, values=self.amazon_category_rules.get("categories", amazon_rules.DEFAULT_CATEGORIES), state="readonly", width=28)
+        category_combo.grid(row=0, column=1, sticky="w", padx=4, pady=4)
+        ttk.Button(controls, text="Save Rule / Apply", command=lambda: apply_category()).grid(row=0, column=2, sticky="w", padx=4, pady=4)
+
+        ttk.Label(controls, text="Brand Name:").grid(row=1, column=0, sticky="w", padx=4, pady=4)
+        brand_var = tk.StringVar()
+        brand_combo = ttk.Combobox(controls, textvariable=brand_var, values=self.amazon_brand_rules.get("brands", amazon_rules.DEFAULT_BRANDS), width=28)
+        brand_combo.grid(row=1, column=1, sticky="w", padx=4, pady=4)
+        ttk.Label(controls, text="New brand:").grid(row=1, column=2, sticky="e", padx=4, pady=4)
+        new_brand_var = tk.StringVar()
+        ttk.Entry(controls, textvariable=new_brand_var, width=24).grid(row=1, column=3, sticky="w", padx=4, pady=4)
+        ttk.Button(controls, text="Save Brand / Apply", command=lambda: apply_brand()).grid(row=1, column=4, sticky="w", padx=4, pady=4)
+
+        ttk.Label(controls, text="MRP:").grid(row=2, column=0, sticky="w", padx=4, pady=4)
+        mrp_var = tk.StringVar()
+        ttk.Entry(controls, textvariable=mrp_var, width=18).grid(row=2, column=1, sticky="w", padx=4, pady=4)
+        ttk.Button(controls, text="Apply for this print", command=lambda: apply_mrp()).grid(row=2, column=2, sticky="w", padx=4, pady=4)
+        info_var = tk.StringVar(value="For missing SKU/FNSKU/quantity, fix the workbook row or quantity grid. For branch errors, fill Branch / Address Settings.")
+        ttk.Label(controls, textvariable=info_var).grid(row=3, column=0, columnspan=5, sticky="w", padx=4, pady=8)
+
+        def refill_tree():
+            for item in tree.get_children():
+                tree.delete(item)
+            for ridx, error in self.amazon_blocking_items():
+                row = self.amazon_rows[ridx]
+                iid = f"{ridx}|{error}"
+                tree.insert("", "end", iid=iid, values=(row.get("merchant_sku", ""), row.get("asin", ""), row.get("fnsku", ""), row.get("title", "")[:90], error))
+            if tree.get_children():
+                tree.selection_set(tree.get_children()[0])
+                on_select()
+
+        def selected_dialog_row():
+            sel = tree.selection()
+            if not sel:
+                messagebox.showwarning("No row", "Select a blocking row first.", parent=win)
+                return None, ""
+            raw = sel[0]
+            idx_text, error = raw.split("|", 1)
+            return int(idx_text), error
+
+        def on_select(event=None):
+            ridx, error = selected_dialog_row()
+            if ridx is None:
+                return
+            row = self.amazon_rows[ridx]
+            category_var.set(row.get("main_heading", "") or (self.amazon_category_rules.get("categories", amazon_rules.DEFAULT_CATEGORIES)[0]))
+            brand_var.set(row.get("brand", "") or (self.amazon_brand_rules.get("brands", amazon_rules.DEFAULT_BRANDS)[0]))
+            mrp_var.set(row.get("mrp", ""))
+            info_var.set(f"Selected missing field: {error}")
+
+        def after_apply():
+            self.rebuild_amazon_rows()
+            self.refresh_amazon_rule_widgets()
+            category_combo["values"] = self.amazon_category_rules.get("categories", amazon_rules.DEFAULT_CATEGORIES)
+            brand_combo["values"] = self.amazon_brand_rules.get("brands", amazon_rules.DEFAULT_BRANDS)
+            refill_tree()
+            if not tree.get_children():
+                messagebox.showinfo("Amazon rows fixed", "All blocking Amazon rows are fixed.", parent=win)
+                win.destroy()
+
+        def apply_category():
+            ridx, error = selected_dialog_row()
+            if ridx is None:
+                return
+            if error != "Missing Main Heading":
+                messagebox.showwarning("Wrong field", "Select a row missing Main Heading.", parent=win)
+                return
+            category = category_var.get().strip()
+            if not category:
+                return
+            amazon_rules.save_category_manual_rule(self.amazon_rows[ridx], category)
+            after_apply()
+
+        def apply_brand():
+            ridx, error = selected_dialog_row()
+            if ridx is None:
+                return
+            if error != "Missing Brand Name":
+                messagebox.showwarning("Wrong field", "Select a row missing Brand Name.", parent=win)
+                return
+            brand = new_brand_var.get().strip() or brand_var.get().strip()
+            if not brand:
+                return
+            amazon_rules.save_brand_manual_rule(self.amazon_rows[ridx], brand)
+            new_brand_var.set("")
+            after_apply()
+
+        def apply_mrp():
+            ridx, error = selected_dialog_row()
+            if ridx is None:
+                return
+            if error != "Missing MRP":
+                messagebox.showwarning("Wrong field", "Select a row missing MRP.", parent=win)
+                return
+            mrp = amazon_validation.normalize_mrp(mrp_var.get())
+            if not mrp:
+                messagebox.showwarning("Invalid MRP", "Enter a valid MRP amount.", parent=win)
+                return
+            row = self.amazon_rows[ridx]
+            self.amazon_manual_mrp[row["row_key"]] = mrp
+            after_apply()
+
+        tree.bind("<<TreeviewSelect>>", on_select)
+        refill_tree()
+
+    def total_amazon_print_labels(self):
+        return sum(amazon_validation.parse_positive_int(row.get("print_qty", 0)) for row in self.amazon_rows)
+
+    def generate_amazon_pdf_clicked(self):
+        if not self.amazon_workbook:
+            messagebox.showwarning("No Amazon workbook", "Upload an Amazon workbook first.")
+            return
+        if pdfcanvas is None or amazon_label_renderer.pdfcanvas is None:
+            messagebox.showerror("Missing package", "reportlab missing. Run install_requirements.bat.")
+            return
+        self.rebuild_amazon_rows()
+        if amazon_validation.has_blocking_errors(self.amazon_rows):
+            self.fix_amazon_blockers_dialog()
+            self.status_var.set("Amazon PDF blocked until validation issues are fixed.")
+            return
+        total = self.total_amazon_print_labels()
+        if total <= 0:
+            messagebox.showerror("No labels", "Amazon print quantity is zero.")
+            return
+        if total > 20000:
+            messagebox.showerror("Too many labels", f"You selected {total} labels. Please split into batches. Maximum 20,000 labels at once.")
+            return
+        if total > 2000:
+            ok = messagebox.askyesno("Large Amazon PDF", f"You are generating {total} Amazon labels. This can take time and create a large PDF. Continue?")
+            if not ok:
+                return
+
+        stamp = time.strftime("%Y%m%d_%H%M%S")
+        out = str(OUT_DIR / f"amazon_labels_{stamp}.pdf")
+        report_out = str(OUT_DIR / f"amazon_label_report_{stamp}.csv")
+        rows_snapshot = copy.deepcopy(self.amazon_rows)
+        branch = copy.deepcopy(self.current_amazon_branch())
+        try:
+            self.amazon_generate_btn.config(state="disabled")
+        except Exception:
+            pass
+        self.status_var.set(f"Generating {total} Amazon labels in background... app will stay usable.")
+        self.update_idletasks()
+
+        def progress(done, grand_total):
+            self.after(0, lambda d=done, t=grand_total: self.status_var.set(f"Generating Amazon PDF... {d}/{t} labels done"))
+
+        def worker():
+            try:
+                amazon_validation.write_report_csv(report_out, rows_snapshot)
+                amazon_label_renderer.generate_amazon_pdf(out, rows_snapshot, branch, progress_callback=progress)
+                self.after(0, lambda: self.on_amazon_pdf_done(out, report_out, total))
+            except Exception as e:
+                err = str(e)
+                log(traceback.format_exc())
+                self.after(0, lambda: self.on_amazon_pdf_error(err))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def on_amazon_pdf_done(self, out, report_out, total):
+        self.last_pdf = out
+        self.amazon_last_report = report_out
+        try:
+            self.amazon_generate_btn.config(state="normal")
+        except Exception:
+            pass
+        self.status_var.set(f"Amazon PDF generated: {total} labels -> {out}")
+        messagebox.showinfo("Amazon PDF generated", f"Amazon PDF generated successfully.\n\nLabels: {total}\nPDF:\n{out}\n\nReport CSV:\n{report_out}")
+
+    def on_amazon_pdf_error(self, err):
+        try:
+            self.amazon_generate_btn.config(state="normal")
+        except Exception:
+            pass
+        messagebox.showerror("Amazon PDF error", err)
+        self.status_var.set("Amazon PDF generation failed. Check logs/debug_log.txt")
+
     def show_empty_preview(self):
         self.preview.delete("all")
         self.preview.create_text(400, 260, text="Upload files to preview", fill="#777777", font=("Arial", 18, "bold"))
+        if hasattr(self, "amazon_preview"):
+            self.amazon_preview.delete("all")
+            self.amazon_preview.create_text(30, 30, text="Upload Amazon workbook to preview", anchor="nw", fill="#777777", font=("Arial", 16, "bold"))
 
     def preview_selected(self):
         idx = self.selected_index()
@@ -1168,7 +1923,6 @@ def self_test():
     label_w = label_h = 49.8 * mm
     out = OUT_DIR / "SELF_TEST_V12_sample_single_labels.pdf"
     c = pdfcanvas.Canvas(str(out), pagesize=(label_w, label_h))
-    dummy = object()
     # local drawing without App instance
     def draw(c, x, y, w, h, fmt, df, row):
         title, lines, lower = build_label_text(fmt, df, row, branch)
@@ -1206,13 +1960,67 @@ def self_test():
             draw(c, 0, 0, label_w, label_h, fmt, df, r)
             c.showPage(); count += 1
     c.save()
-    print(f"SELF TEST OK: generated {count} labels at {out}")
+    print(f"SELF TEST Flipkart OK: generated {count} labels at {out}")
+
+    amazon_sample = SAMPLE_DIR / "use it amazon.xlsx"
+    if not amazon_sample.exists():
+        amazon_sample = BASE_DIR / "use it amazon.xlsx"
+    if amazon_sample.exists():
+        mapping = amazon_rules.load_mapping_settings()
+        workbook = amazon_reader.load_amazon_workbook(str(amazon_sample), mapping)
+        amazon_rules.merge_sheet_options(workbook.get("sheet_categories", []), workbook.get("sheet_brands", []))
+        rows = amazon_validation.resolve_amazon_rows(
+            workbook,
+            mapping,
+            amazon_rules.load_category_rules(),
+            amazon_rules.load_brand_rules(),
+        )
+        rows = [row for row in rows if row.get("merchant_sku") and row.get("fnsku") and row.get("main_heading") and row.get("brand")][:5]
+        if not rows:
+            print("SELF TEST Amazon failed: no usable rows found in sample workbook")
+            return 1
+        for row in rows:
+            row["print_qty"] = 1
+            if not row.get("mrp"):
+                row["mrp"] = "799.00"
+        amazon_validation.validate_amazon_rows(rows, branch)
+        report_out = OUT_DIR / "SELF_TEST_amazon_label_report.csv"
+        amazon_validation.write_report_csv(report_out, rows)
+        errors = [f"{row.get('merchant_sku','')}: {'; '.join(row.get('errors', []))}" for row in rows if row.get("errors")]
+        if errors:
+            print("SELF TEST Amazon validation failed:")
+            for err in errors[:10]:
+                print("  " + err)
+            print(f"Amazon validation report: {report_out}")
+            return 1
+        amazon_out = OUT_DIR / "SELF_TEST_amazon_labels.pdf"
+        total_amazon = amazon_label_renderer.generate_amazon_pdf(amazon_out, rows, branch)
+        print(f"SELF TEST Amazon OK: detected {len(workbook['consignment_df'])} row(s), generated {total_amazon} labels at {amazon_out}")
+        print(f"SELF TEST Amazon report: {report_out}")
+    else:
+        print("SELF TEST Amazon skipped: samples/use it amazon.xlsx not found")
+    return 0
+
+
+def ui_smoke_test():
+    app = App()
+    app.update_idletasks()
+    tabs = [app.main_notebook.tab(i, "text") for i in range(app.main_notebook.index("end"))]
+    expected = ["Flipkart Labels", "Amazon Labels", "Branch / Address Settings", "Format / Mapping Settings"]
+    missing = [tab for tab in expected if tab not in tabs]
+    app.destroy()
+    if missing:
+        print(f"UI SMOKE TEST failed. Missing tabs: {missing}")
+        return 1
+    print("UI SMOKE TEST OK: Flipkart and Amazon tabs opened.")
     return 0
 
 
 if __name__ == "__main__":
     if "--self-test" in sys.argv:
         sys.exit(self_test())
+    if "--ui-smoke-test" in sys.argv:
+        sys.exit(ui_smoke_test())
     try:
         app = App()
         app.mainloop()
