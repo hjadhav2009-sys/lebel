@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+logs/*.txt
+outputs/*.pdf
+outputs/*.csv
+data/current_amazon_master.xlsx
+~$*.xlsx

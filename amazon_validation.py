@@ -70,11 +70,18 @@ def build_master_index(master_df, mapping):
     return index
 
 
-def resolve_amazon_rows(workbook, mapping, category_rules, brand_rules, manual_mrp=None, qty_overrides=None):
+def resolve_amazon_rows(workbook_or_consignment, mapping, category_rules, brand_rules, manual_mrp=None, qty_overrides=None, master_df=None):
     manual_mrp = manual_mrp or {}
     qty_overrides = qty_overrides or {}
-    consignment_df = workbook["consignment_df"]
-    master_index = build_master_index(workbook.get("master_df"), mapping)
+    if hasattr(workbook_or_consignment, "iterrows"):
+        consignment_df = workbook_or_consignment
+    else:
+        consignment_df = workbook_or_consignment.get("consignment_df")
+        if master_df is None:
+            master_df = workbook_or_consignment.get("master_df")
+    if consignment_df is None or consignment_df.empty:
+        return []
+    master_index = build_master_index(master_df, mapping)
     rows = []
 
     for source_index, source_row in consignment_df.iterrows():

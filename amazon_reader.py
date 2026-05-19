@@ -178,6 +178,15 @@ def read_table_auto_header(path, sheet_name, aliases_by_field, required_groups, 
     return df, header_row
 
 
+def sheet_order(sheet_names, preferred_names):
+    preferred = []
+    for name in preferred_names:
+        found = find_sheet(sheet_names, [name])
+        if found and found not in preferred:
+            preferred.append(found)
+    return preferred + [name for name in sheet_names if name not in preferred]
+
+
 def is_amazon_columns(columns):
     keys = {norm_col(c) for c in columns}
     has_merchant = any(norm_col(a) in keys for a in CONSIGNMENT_ALIASES["merchant_sku"])
@@ -206,6 +215,23 @@ def detect_amazon_workbook(path, mapping=None):
     return False
 
 
+def detect_master_listing_workbook(path, mapping=None):
+    ensure_pandas()
+    mapping = mapping or {"master": {}}
+    master_aliases = aliases_with_mapping("master", mapping)
+    xl = pd.ExcelFile(path)
+    for sheet_name in xl.sheet_names:
+        header = find_header_row(
+            path,
+            sheet_name,
+            master_aliases,
+            [("asin", "mrp"), ("product_id", "mrp")],
+        )
+        if header is not None:
+            return True
+    return False
+
+
 def filter_consignment_rows(df, mapping):
     important = [
         mapped_col(df, mapping, "consignment", "merchant_sku"),
@@ -213,6 +239,23 @@ def filter_consignment_rows(df, mapping):
         mapped_col(df, mapping, "consignment", "asin"),
         mapped_col(df, mapping, "consignment", "fnsku"),
         mapped_col(df, mapping, "consignment", "shipped_qty"),
+    ]
+    important = [c for c in important if c]
+    if not important:
+        return df
+    keep = []
+    for _, row in df.iterrows():
+        keep.append(any(clean_text(row.get(c, "")) for c in important))
+    return df.loc[keep].reset_index(drop=True).fillna("")
+
+
+def filter_master_rows(df, mapping):
+    important = [
+        mapped_col(df, mapping, "master", "asin"),
+        mapped_col(df, mapping, "master", "product_id"),
+        mapped_col(df, mapping, "master", "mrp"),
+        mapped_col(df, mapping, "master", "item_name"),
+        mapped_col(df, mapping, "master", "seller_sku"),
     ]
     important = [c for c in important if c]
     if not important:
@@ -280,77 +323,73 @@ def extract_need_sheet_options(path, sheet_name):
     return sorted(categories), sorted(brands)
 
 
-def load_amazon_workbook(path, mapping):
+def load_master_listing_file(path, mapping):
     ensure_pandas()
     path = str(path)
     suffix = Path(path).suffix.lower()
     if suffix not in (".xlsx", ".xls"):
-        raise RuntimeError("Amazon upload must be an Excel workbook (.xlsx/.xls).")
+        raise RuntimeError("Weekly master listing must be an Excel workbook (.xlsx/.xls).")
 
     xl = pd.ExcelFile(path)
-    if not detect_amazon_workbook(path, mapping):
-        raise RuntimeError("This workbook was not recognized as an Amazon label file.")
-
-    consignment_sheet = find_sheet(xl.sheet_names, ["given by amazon for label"])
-    consignment_aliases = aliases_with_mapping("consignment", mapping)
     master_aliases = aliases_with_mapping("master", mapping)
-    consignment_df = None
-    consignment_header = None
-    if consignment_sheet:
-        consignment_df, consignment_header = read_table_auto_header(
-            path,
-            consignment_sheet,
-            consignment_aliases,
-            [("merchant_sku", "fnsku", "shipped_qty"), ("asin", "fnsku")],
-        )
-    if consignment_df is None:
-        for sheet_name in xl.sheet_names:
-            consignment_df, consignment_header = read_table_auto_header(
-                path,
-                sheet_name,
-                consignment_aliases,
-                [("merchant_sku", "fnsku", "shipped_qty"), ("asin", "fnsku")],
-            )
-            if consignment_df is not None:
-                consignment_sheet = sheet_name
-                break
-    if consignment_df is None:
-        raise RuntimeError("Could not find Amazon label table header. It should contain Merchant SKU/FNSKU/Shipped or ASIN/FNSKU.")
-
-    consignment_df = filter_consignment_rows(consignment_df, mapping)
-
-    master_sheet = find_sheet(xl.sheet_names, ["all lsiting", "all listing", "listing"])
     master_df = None
+    master_sheet = ""
     master_header = None
-    if master_sheet:
-        master_df, master_header = read_table_auto_header(
+    for sheet_name in sheet_order(xl.sheet_names, ["all lsiting", "all listing", "listing", "Sheet1"]):
+        candidate_df, candidate_header = read_table_auto_header(
             path,
-            master_sheet,
+            sheet_name,
             master_aliases,
             [("asin", "mrp"), ("product_id", "mrp")],
-            max_scan_rows=30,
+            max_scan_rows=50,
         )
-        if master_df is None:
-            master_df = pd.read_excel(path, sheet_name=master_sheet, dtype=str).fillna("")
-            master_header = 0
-
+        if candidate_df is not None:
+            master_df = filter_master_rows(candidate_df, mapping)
+            master_sheet = sheet_name
+            master_header = candidate_header
+            break
     if master_df is None:
-        for sheet_name in xl.sheet_names:
-            candidate_df, candidate_header = read_table_auto_header(
-                path,
-                sheet_name,
-                master_aliases,
-                [("asin", "mrp"), ("product_id", "mrp")],
-                max_scan_rows=30,
-            )
-            if candidate_df is not None:
-                master_sheet = sheet_name
-                master_df = candidate_df
-                master_header = candidate_header
-                break
+        raise RuntimeError("Could not find master listing header. Need ASIN/product-id and maximum-retail-price/MRP columns.")
 
-    if master_df is None:
-        master_df = pd.DataFrame()
+    mrp_col = mapped_col(master_df, mapping, "master", "mrp") or ""
+    return {
+        "path": path,
+        "sheet_names": xl.sheet_names,
+        "master_sheet": master_sheet,
+        "master_header_row": master_header,
+        "master_df": master_df,
+        "mrp_col": mrp_col,
+        "detected_columns": {"master": list(master_df.columns)},
+    }
+
+
+def load_consignment_file(path, mapping):
+    ensure_pandas()
+    path = str(path)
+    suffix = Path(path).suffix.lower()
+    if suffix not in (".xlsx", ".xls"):
+        raise RuntimeError("Amazon consignment file must be an Excel workbook (.xlsx/.xls).")
+
+    xl = pd.ExcelFile(path)
+    consignment_aliases = aliases_with_mapping("consignment", mapping)
+    consignment_df = None
+    consignment_sheet = ""
+    consignment_header = None
+    for sheet_name in sheet_order(xl.sheet_names, ["given by amazon for label"]):
+        candidate_df, candidate_header = read_table_auto_header(
+            path,
+            sheet_name,
+            consignment_aliases,
+            [("merchant_sku", "fnsku", "shipped_qty"), ("asin", "fnsku")],
+            max_scan_rows=50,
+        )
+        if candidate_df is not None:
+            consignment_df = filter_consignment_rows(candidate_df, mapping)
+            consignment_sheet = sheet_name
+            consignment_header = candidate_header
+            break
+    if consignment_df is None:
+        raise RuntimeError("Could not find Amazon label table header. It should contain Merchant SKU/FNSKU/Shipped or ASIN/FNSKU.")
 
     need_sheet = find_sheet(xl.sheet_names, ["need in label", "need in label "])
     categories, brands = [], []
@@ -363,14 +402,47 @@ def load_amazon_workbook(path, mapping):
         "consignment_sheet": consignment_sheet,
         "consignment_header_row": consignment_header,
         "consignment_df": consignment_df,
-        "master_sheet": master_sheet or "",
-        "master_header_row": master_header,
-        "master_df": master_df,
         "need_sheet": need_sheet or "",
         "sheet_categories": categories,
         "sheet_brands": brands,
+        "detected_columns": {"consignment": list(consignment_df.columns)},
+    }
+
+
+def load_amazon_workbook(path, mapping):
+    ensure_pandas()
+    path = str(path)
+    suffix = Path(path).suffix.lower()
+    if suffix not in (".xlsx", ".xls"):
+        raise RuntimeError("Amazon upload must be an Excel workbook (.xlsx/.xls).")
+
+    consignment = load_consignment_file(path, mapping)
+    try:
+        master = load_master_listing_file(path, mapping)
+    except Exception:
+        master = {
+            "master_sheet": "",
+            "master_header_row": None,
+            "master_df": pd.DataFrame(),
+            "mrp_col": "",
+            "detected_columns": {"master": []},
+        }
+
+    return {
+        "path": path,
+        "sheet_names": consignment.get("sheet_names", []),
+        "consignment_sheet": consignment.get("consignment_sheet", ""),
+        "consignment_header_row": consignment.get("consignment_header_row"),
+        "consignment_df": consignment.get("consignment_df"),
+        "master_sheet": master.get("master_sheet", ""),
+        "master_header_row": master.get("master_header_row"),
+        "master_df": master.get("master_df"),
+        "need_sheet": consignment.get("need_sheet", ""),
+        "sheet_categories": consignment.get("sheet_categories", []),
+        "sheet_brands": consignment.get("sheet_brands", []),
+        "mrp_col": master.get("mrp_col", ""),
         "detected_columns": {
-            "consignment": list(consignment_df.columns),
-            "master": list(master_df.columns) if master_df is not None and not master_df.empty else [],
+            "consignment": consignment.get("detected_columns", {}).get("consignment", []),
+            "master": master.get("detected_columns", {}).get("master", []),
         },
     }

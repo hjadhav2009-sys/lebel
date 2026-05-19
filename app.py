@@ -6,6 +6,7 @@ import traceback
 import subprocess
 import threading
 import copy
+import shutil
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, simpledialog
@@ -29,7 +30,7 @@ except Exception:
     mm = 2.834645669291339
     code128 = None
 
-APP_VERSION = "V13 Advanced"
+APP_VERSION = "V14 Advanced"
 APP_NAME = f"M Men Style - Marketplace Label Generator {APP_VERSION}"
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
@@ -41,6 +42,7 @@ for d in (DATA_DIR, OUT_DIR, LOG_DIR, SAMPLE_DIR):
 SETTINGS_FILE = DATA_DIR / "branches.json"
 FORMATS_FILE = DATA_DIR / "label_formats.json"
 LOG_FILE = LOG_DIR / "debug_log.txt"
+CURRENT_AMAZON_MASTER_FILE = DATA_DIR / "current_amazon_master.xlsx"
 
 DEFAULT_BRANCHES = {
     "Mumbai Branch": {
@@ -322,6 +324,12 @@ class App(tk.Tk):
         self.branches = load_branches()
         self.files = []
         self.amazon_workbook = None
+        self.amazon_master = None
+        self.amazon_consignment = None
+        self.amazon_master_df = None
+        self.amazon_consignment_df = None
+        self.amazon_master_path = ""
+        self.amazon_consignment_path = ""
         self.amazon_rows = []
         self.amazon_manual_mrp = {}
         self.amazon_qty_overrides = {}
@@ -337,6 +345,7 @@ class App(tk.Tk):
         self.build_ui()
         self.refresh_branches()
         self.show_empty_preview()
+        self.try_auto_load_amazon_master()
         log("App started")
 
     def build_ui(self):
@@ -426,8 +435,10 @@ class App(tk.Tk):
     def build_amazon_tab(self):
         toolbar = ttk.Frame(self.tab_amazon)
         toolbar.pack(fill="x", padx=4, pady=4)
-        ttk.Button(toolbar, text="Upload Amazon Workbook", command=self.upload_amazon_workbook).pack(side="left", padx=4)
-        ttk.Button(toolbar, text="Clear", command=self.clear_amazon).pack(side="left", padx=4)
+        ttk.Button(toolbar, text="Upload Weekly Master Listing", command=self.upload_amazon_master_file).pack(side="left", padx=4)
+        ttk.Button(toolbar, text="Upload Amazon Consignment File", command=self.upload_amazon_consignment_file).pack(side="left", padx=4)
+        ttk.Button(toolbar, text="Clear Amazon Consignment", command=self.clear_amazon_consignment).pack(side="left", padx=4)
+        ttk.Button(toolbar, text="Clear Master Listing", command=self.clear_amazon_master).pack(side="left", padx=4)
         ttk.Button(toolbar, text="Preview Selected", command=self.preview_selected_amazon).pack(side="left", padx=12)
         ttk.Button(toolbar, text="Validate Amazon", command=self.validate_amazon_clicked).pack(side="left", padx=4)
         ttk.Button(toolbar, text="Fix Blocking Rows", command=self.fix_amazon_blockers_dialog).pack(side="left", padx=4)
@@ -441,8 +452,12 @@ class App(tk.Tk):
         self.amazon_branch_combo.pack(side="left")
         self.amazon_branch_combo.bind("<<ComboboxSelected>>", lambda e: self.save_amazon_selected_branch())
 
-        self.amazon_workbook_var = tk.StringVar(value="No Amazon workbook loaded")
-        ttk.Label(self.tab_amazon, textvariable=self.amazon_workbook_var).pack(anchor="w", padx=8, pady=(0, 4))
+        status_box = ttk.Frame(self.tab_amazon)
+        status_box.pack(fill="x", padx=8, pady=(0, 4))
+        self.amazon_master_status_var = tk.StringVar(value="Master Listing: not loaded")
+        self.amazon_consignment_status_var = tk.StringVar(value="Consignment File: not loaded")
+        ttk.Label(status_box, textvariable=self.amazon_master_status_var).pack(anchor="w")
+        ttk.Label(status_box, textvariable=self.amazon_consignment_status_var).pack(anchor="w")
 
         body = ttk.Panedwindow(self.tab_amazon, orient="horizontal")
         body.pack(fill="both", expand=True, padx=4, pady=4)
@@ -669,7 +684,11 @@ class App(tk.Tk):
     def amazon_column_values(self, group):
         defaults = list(amazon_rules.DEFAULT_MAPPING_SETTINGS.get(group, {}).values())
         detected = []
-        if self.amazon_workbook:
+        if group == "consignment" and self.amazon_consignment:
+            detected = self.amazon_consignment.get("detected_columns", {}).get("consignment", [])
+        elif group == "master" and self.amazon_master:
+            detected = self.amazon_master.get("detected_columns", {}).get("master", [])
+        elif self.amazon_workbook:
             detected = self.amazon_workbook.get("detected_columns", {}).get(group, [])
         return amazon_rules.unique_list(defaults + detected)
 
@@ -924,6 +943,9 @@ class App(tk.Tk):
                         if amazon_reader.detect_amazon_workbook(p, self.amazon_mapping):
                             errors.append(f"{Path(p).name}: Amazon workbook detected. Use the Amazon Labels tab.")
                             continue
+                        if amazon_reader.detect_master_listing_workbook(p, self.amazon_mapping):
+                            errors.append(f"{Path(p).name}: Amazon master listing detected. Use the Amazon Labels tab.")
+                            continue
                     except Exception:
                         pass
                 df = read_file(p)
@@ -1119,12 +1141,124 @@ class App(tk.Tk):
             for field, var in fields.items():
                 self.amazon_mapping[group][field] = var.get().strip()
 
-    def upload_amazon_workbook(self):
-        path = filedialog.askopenfilename(title="Select Amazon Excel workbook", filetypes=[("Excel Workbook", "*.xlsx *.xls"), ("All Files", "*.*")])
+    def update_amazon_file_status(self):
+        if hasattr(self, "amazon_master_status_var"):
+            if self.amazon_master:
+                name = Path(self.amazon_master_path or self.amazon_master.get("path", "")).name
+                row_count = len(self.amazon_master_df) if self.amazon_master_df is not None else 0
+                mrp_col = self.amazon_master.get("mrp_col", "") or "not detected"
+                self.amazon_master_status_var.set(f"Master Listing: {name} | rows: {row_count} | MRP column: {mrp_col}")
+            else:
+                self.amazon_master_status_var.set("Master Listing: not loaded")
+        if hasattr(self, "amazon_consignment_status_var"):
+            if self.amazon_consignment:
+                name = Path(self.amazon_consignment_path or self.amazon_consignment.get("path", "")).name
+                row_count = len(self.amazon_consignment_df) if self.amazon_consignment_df is not None else 0
+                sheet = self.amazon_consignment.get("consignment_sheet", "") or "not detected"
+                header = self.amazon_consignment.get("consignment_header_row")
+                header_text = f"row {int(header) + 1}" if header is not None else "not detected"
+                self.amazon_consignment_status_var.set(f"Consignment File: {name} | rows: {row_count} | label sheet: {sheet}/{header_text}")
+            else:
+                self.amazon_consignment_status_var.set("Consignment File: not loaded")
+
+    def try_auto_load_amazon_master(self):
+        path = self.amazon_mapping.get("last_master_path", "")
+        candidates = []
         if path:
-            self.load_amazon_path(path)
+            candidates.append(Path(path))
+        candidates.append(CURRENT_AMAZON_MASTER_FILE)
+        for candidate in candidates:
+            if candidate.exists():
+                try:
+                    if self.load_amazon_master_path(str(candidate), copy_to_current=False, quiet=True):
+                        self.status_var.set(f"Auto-loaded Amazon master listing: {candidate.name}")
+                        return
+                except Exception:
+                    log(traceback.format_exc())
+        self.update_amazon_file_status()
+
+    def upload_amazon_master_file(self):
+        path = filedialog.askopenfilename(title="Select weekly Amazon master listing", filetypes=[("Excel Workbook", "*.xlsx *.xls"), ("All Files", "*.*")])
+        if path:
+            self.load_amazon_master_path(path)
+
+    def load_amazon_master_path(self, path, copy_to_current=True, quiet=False):
+        self.sync_amazon_mapping_from_widgets()
+        self.status_var.set("Loading Amazon weekly master listing...")
+        self.update_idletasks()
+        try:
+            master = amazon_reader.load_master_listing_file(path, self.amazon_mapping)
+            self.amazon_master = master
+            self.amazon_master_df = master.get("master_df")
+            self.amazon_master_path = str(path)
+            self.amazon_mapping["last_master_path"] = str(path)
+            amazon_rules.save_mapping_settings(self.amazon_mapping)
+            if copy_to_current:
+                try:
+                    shutil.copy2(path, CURRENT_AMAZON_MASTER_FILE)
+                except Exception:
+                    log(traceback.format_exc())
+            self.amazon_manual_mrp = {}
+            self.refresh_amazon_mapping_column_values()
+            self.rebuild_amazon_rows(preserve_quantities=True)
+            self.update_amazon_file_status()
+            if not quiet:
+                row_count = len(self.amazon_master_df) if self.amazon_master_df is not None else 0
+                self.status_var.set(f"Amazon master listing loaded: {row_count} row(s).")
+            return True
+        except Exception as e:
+            log(traceback.format_exc())
+            if not quiet:
+                messagebox.showerror("Amazon master load error", str(e))
+                self.status_var.set("Amazon master listing load failed.")
+            else:
+                self.update_amazon_file_status()
+            return False
+
+    def upload_amazon_consignment_file(self):
+        path = filedialog.askopenfilename(title="Select Amazon consignment label file", filetypes=[("Excel Workbook", "*.xlsx *.xls"), ("All Files", "*.*")])
+        if path:
+            self.load_amazon_consignment_path(path)
+
+    def load_amazon_consignment_path(self, path):
+        self.sync_amazon_mapping_from_widgets()
+        self.status_var.set("Loading Amazon consignment file...")
+        self.update_idletasks()
+        try:
+            consignment = amazon_reader.load_consignment_file(path, self.amazon_mapping)
+            amazon_rules.merge_sheet_options(consignment.get("sheet_categories", []), consignment.get("sheet_brands", []))
+            self.amazon_consignment = consignment
+            self.amazon_consignment_df = consignment.get("consignment_df")
+            self.amazon_consignment_path = str(path)
+            self.amazon_manual_mrp = {}
+            self.amazon_qty_overrides = {}
+
+            # Backward-compatible convenience: if the consignment workbook also has a master sheet and no master is loaded, use it.
+            if self.amazon_master is None:
+                try:
+                    master = amazon_reader.load_master_listing_file(path, self.amazon_mapping)
+                    self.amazon_master = master
+                    self.amazon_master_df = master.get("master_df")
+                    self.amazon_master_path = str(path)
+                except Exception:
+                    pass
+
+            self.refresh_amazon_rule_widgets()
+            self.refresh_amazon_mapping_column_values()
+            self.rebuild_amazon_rows(preserve_quantities=False)
+            self.update_amazon_file_status()
+            row_count = len(self.amazon_consignment_df) if self.amazon_consignment_df is not None else 0
+            if self.amazon_master is None:
+                self.status_var.set(f"Amazon consignment loaded: {row_count} row(s). Upload Weekly Master Listing to auto-fill MRP.")
+            else:
+                self.status_var.set(f"Amazon consignment loaded: {row_count} row(s).")
+        except Exception as e:
+            log(traceback.format_exc())
+            messagebox.showerror("Amazon consignment load error", str(e))
+            self.status_var.set("Amazon consignment load failed.")
 
     def load_amazon_path(self, path):
+        # Backward-compatible combined-workbook loader.
         self.sync_amazon_mapping_from_widgets()
         self.status_var.set("Loading Amazon workbook. Please wait...")
         self.update_idletasks()
@@ -1132,34 +1266,85 @@ class App(tk.Tk):
             workbook = amazon_reader.load_amazon_workbook(path, self.amazon_mapping)
             amazon_rules.merge_sheet_options(workbook.get("sheet_categories", []), workbook.get("sheet_brands", []))
             self.amazon_workbook = workbook
+            self.amazon_consignment = {
+                "path": str(path),
+                "sheet_names": workbook.get("sheet_names", []),
+                "consignment_sheet": workbook.get("consignment_sheet", ""),
+                "consignment_header_row": workbook.get("consignment_header_row"),
+                "consignment_df": workbook.get("consignment_df"),
+                "need_sheet": workbook.get("need_sheet", ""),
+                "sheet_categories": workbook.get("sheet_categories", []),
+                "sheet_brands": workbook.get("sheet_brands", []),
+                "detected_columns": {"consignment": workbook.get("detected_columns", {}).get("consignment", [])},
+            }
+            self.amazon_consignment_df = workbook.get("consignment_df")
+            self.amazon_consignment_path = str(path)
+            if workbook.get("master_df") is not None and not workbook.get("master_df").empty:
+                self.amazon_master = {
+                    "path": str(path),
+                    "master_sheet": workbook.get("master_sheet", ""),
+                    "master_header_row": workbook.get("master_header_row"),
+                    "master_df": workbook.get("master_df"),
+                    "mrp_col": workbook.get("mrp_col", ""),
+                    "detected_columns": {"master": workbook.get("detected_columns", {}).get("master", [])},
+                }
+                self.amazon_master_df = workbook.get("master_df")
+                self.amazon_master_path = str(path)
             self.amazon_manual_mrp = {}
             self.amazon_qty_overrides = {}
             self.refresh_amazon_rule_widgets()
             self.refresh_amazon_mapping_column_values()
             self.rebuild_amazon_rows(preserve_quantities=False)
-            self.amazon_workbook_var.set(
-                f"Loaded: {Path(path).name} | label sheet: {workbook.get('consignment_sheet')} | master sheet: {workbook.get('master_sheet') or 'not found'}"
-            )
+            self.update_amazon_file_status()
             self.status_var.set(f"Amazon workbook loaded: {len(self.amazon_rows)} row(s).")
         except Exception as e:
             log(traceback.format_exc())
             messagebox.showerror("Amazon load error", str(e))
             self.status_var.set("Amazon workbook load failed.")
 
+    def upload_amazon_workbook(self):
+        path = filedialog.askopenfilename(title="Select combined Amazon workbook", filetypes=[("Excel Workbook", "*.xlsx *.xls"), ("All Files", "*.*")])
+        if path:
+            self.load_amazon_path(path)
+
     def clear_amazon(self):
+        self.clear_amazon_consignment()
+        self.clear_amazon_master()
+        self.status_var.set("Cleared Amazon files.")
+
+    def clear_amazon_consignment(self):
         self.amazon_workbook = None
+        self.amazon_consignment = None
+        self.amazon_consignment_df = None
+        self.amazon_consignment_path = ""
         self.amazon_rows = []
         self.amazon_manual_mrp = {}
         self.amazon_qty_overrides = {}
-        self.amazon_workbook_var.set("No Amazon workbook loaded")
         for item in self.amazon_tree.get_children():
             self.amazon_tree.delete(item)
         self.amazon_preview.delete("all")
-        self.amazon_preview.create_text(30, 30, text="Upload Amazon workbook to preview", anchor="nw", fill="#777777", font=("Arial", 16, "bold"))
-        self.status_var.set("Cleared Amazon workbook.")
+        self.amazon_preview.create_text(30, 30, text="Upload Amazon consignment file to preview", anchor="nw", fill="#777777", font=("Arial", 16, "bold"))
+        self.update_amazon_file_status()
+        self.status_var.set("Cleared Amazon consignment file.")
+
+    def clear_amazon_master(self):
+        self.amazon_master = None
+        self.amazon_master_df = None
+        self.amazon_master_path = ""
+        self.amazon_manual_mrp = {}
+        self.amazon_mapping["last_master_path"] = ""
+        amazon_rules.save_mapping_settings(self.amazon_mapping)
+        try:
+            if CURRENT_AMAZON_MASTER_FILE.exists():
+                CURRENT_AMAZON_MASTER_FILE.unlink()
+        except Exception:
+            log(traceback.format_exc())
+        self.rebuild_amazon_rows(preserve_quantities=True)
+        self.update_amazon_file_status()
+        self.status_var.set("Cleared Amazon master listing.")
 
     def rebuild_amazon_rows(self, preserve_quantities=True):
-        if not self.amazon_workbook:
+        if self.amazon_consignment_df is None:
             return
         if preserve_quantities:
             for row in self.amazon_rows:
@@ -1169,12 +1354,13 @@ class App(tk.Tk):
         self.amazon_category_rules = amazon_rules.load_category_rules()
         self.amazon_brand_rules = amazon_rules.load_brand_rules()
         self.amazon_rows = amazon_validation.resolve_amazon_rows(
-            self.amazon_workbook,
+            self.amazon_consignment_df,
             self.amazon_mapping,
             self.amazon_category_rules,
             self.amazon_brand_rules,
             manual_mrp=self.amazon_manual_mrp,
             qty_overrides=self.amazon_qty_overrides,
+            master_df=self.amazon_master_df,
         )
         amazon_validation.validate_amazon_rows(self.amazon_rows, self.current_amazon_branch())
         self.refresh_amazon_table()
@@ -1205,13 +1391,14 @@ class App(tk.Tk):
             self.on_amazon_row_select()
 
     def validate_amazon_clicked(self):
-        if not self.amazon_workbook:
-            messagebox.showwarning("No Amazon workbook", "Upload an Amazon workbook first.")
+        if self.amazon_consignment_df is None:
+            messagebox.showwarning("No Amazon consignment", "Upload an Amazon consignment file first.")
             return
         self.rebuild_amazon_rows()
         fail_count = sum(1 for row in self.amazon_rows if row.get("errors"))
         if fail_count:
-            messagebox.showwarning("Amazon validation issues", f"{fail_count} row(s) have blocking issues. Use Fix Blocking Rows before generating PDF.")
+            extra = "\n\nUpload Weekly Master Listing to auto-fill MRP." if self.amazon_master_df is None else ""
+            messagebox.showwarning("Amazon validation issues", f"{fail_count} row(s) have blocking issues. Use Fix Blocking Rows before generating PDF.{extra}")
             self.status_var.set(f"Amazon validation found {fail_count} failing row(s).")
         else:
             messagebox.showinfo("Amazon validation PASS", "All Amazon rows passed validation.")
@@ -1353,8 +1540,8 @@ class App(tk.Tk):
         return items
 
     def fix_amazon_blockers_dialog(self):
-        if not self.amazon_workbook:
-            messagebox.showwarning("No Amazon workbook", "Upload an Amazon workbook first.")
+        if self.amazon_consignment_df is None:
+            messagebox.showwarning("No Amazon consignment", "Upload an Amazon consignment file first.")
             return
         self.rebuild_amazon_rows()
         blockers = self.amazon_blocking_items()
@@ -1490,8 +1677,8 @@ class App(tk.Tk):
         return sum(amazon_validation.parse_positive_int(row.get("print_qty", 0)) for row in self.amazon_rows)
 
     def generate_amazon_pdf_clicked(self):
-        if not self.amazon_workbook:
-            messagebox.showwarning("No Amazon workbook", "Upload an Amazon workbook first.")
+        if self.amazon_consignment_df is None:
+            messagebox.showwarning("No Amazon consignment", "Upload an Amazon consignment file first.")
             return
         if pdfcanvas is None or amazon_label_renderer.pdfcanvas is None:
             messagebox.showerror("Missing package", "reportlab missing. Run install_requirements.bat.")
@@ -1563,7 +1750,7 @@ class App(tk.Tk):
         self.preview.create_text(400, 260, text="Upload files to preview", fill="#777777", font=("Arial", 18, "bold"))
         if hasattr(self, "amazon_preview"):
             self.amazon_preview.delete("all")
-            self.amazon_preview.create_text(30, 30, text="Upload Amazon workbook to preview", anchor="nw", fill="#777777", font=("Arial", 16, "bold"))
+            self.amazon_preview.create_text(30, 30, text="Upload Amazon consignment file to preview", anchor="nw", fill="#777777", font=("Arial", 16, "bold"))
 
     def preview_selected(self):
         idx = self.selected_index()
@@ -1962,10 +2149,26 @@ def self_test():
     c.save()
     print(f"SELF TEST Flipkart OK: generated {count} labels at {out}")
 
+    separate_master = SAMPLE_DIR / "amazon_master.xlsx"
+    separate_consignment = SAMPLE_DIR / "amazon_consignment.xlsx"
     amazon_sample = SAMPLE_DIR / "use it amazon.xlsx"
     if not amazon_sample.exists():
         amazon_sample = BASE_DIR / "use it amazon.xlsx"
-    if amazon_sample.exists():
+    if separate_master.exists() and separate_consignment.exists():
+        mapping = amazon_rules.load_mapping_settings()
+        master = amazon_reader.load_master_listing_file(str(separate_master), mapping)
+        consignment = amazon_reader.load_consignment_file(str(separate_consignment), mapping)
+        amazon_rules.merge_sheet_options(consignment.get("sheet_categories", []), consignment.get("sheet_brands", []))
+        rows = amazon_validation.resolve_amazon_rows(
+            consignment["consignment_df"],
+            mapping,
+            amazon_rules.load_category_rules(),
+            amazon_rules.load_brand_rules(),
+            master_df=master["master_df"],
+        )
+        source_count = len(consignment["consignment_df"])
+        test_mode = "separate files"
+    elif amazon_sample.exists():
         mapping = amazon_rules.load_mapping_settings()
         workbook = amazon_reader.load_amazon_workbook(str(amazon_sample), mapping)
         amazon_rules.merge_sheet_options(workbook.get("sheet_categories", []), workbook.get("sheet_brands", []))
@@ -1975,6 +2178,14 @@ def self_test():
             amazon_rules.load_category_rules(),
             amazon_rules.load_brand_rules(),
         )
+        source_count = len(workbook["consignment_df"])
+        test_mode = "combined workbook"
+    else:
+        rows = []
+        source_count = 0
+        test_mode = ""
+
+    if rows:
         rows = [row for row in rows if row.get("merchant_sku") and row.get("fnsku") and row.get("main_heading") and row.get("brand")][:5]
         if not rows:
             print("SELF TEST Amazon failed: no usable rows found in sample workbook")
@@ -1995,10 +2206,10 @@ def self_test():
             return 1
         amazon_out = OUT_DIR / "SELF_TEST_amazon_labels.pdf"
         total_amazon = amazon_label_renderer.generate_amazon_pdf(amazon_out, rows, branch)
-        print(f"SELF TEST Amazon OK: detected {len(workbook['consignment_df'])} row(s), generated {total_amazon} labels at {amazon_out}")
+        print(f"SELF TEST Amazon OK ({test_mode}): detected {source_count} row(s), generated {total_amazon} labels at {amazon_out}")
         print(f"SELF TEST Amazon report: {report_out}")
     else:
-        print("SELF TEST Amazon skipped: samples/use it amazon.xlsx not found")
+        print("SELF TEST Amazon skipped: samples/amazon_master.xlsx + samples/amazon_consignment.xlsx or samples/use it amazon.xlsx not found")
     return 0
 
 
