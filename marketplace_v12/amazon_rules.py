@@ -41,6 +41,7 @@ DEFAULT_BRANDS = ["M Men Style", "Tunglaze", "Sullery"]
 DEFAULT_MAPPING_SETTINGS = {
     "selected_branch": "",
     "last_master_path": "",
+    "pdf_layout": "BarTender 2UP 101.5x50",
     "consignment": {
         "merchant_sku": "Merchant SKU",
         "title": "Title",
@@ -170,6 +171,8 @@ def load_mapping_settings():
     if "last_master_path" not in data:
         data["last_master_path"] = ""
         changed = True
+    if "pdf_layout" not in data:
+        data["pdf_layout"] = DEFAULT_MAPPING_SETTINGS["pdf_layout"]
     if changed or not MAPPING_SETTINGS_FILE.exists():
         save_mapping_settings(data)
     return data
@@ -179,6 +182,7 @@ def save_mapping_settings(data):
     clean = {
         "selected_branch": clean_text(data.get("selected_branch", "")),
         "last_master_path": clean_text(data.get("last_master_path", "")),
+        "pdf_layout": clean_text(data.get("pdf_layout", DEFAULT_MAPPING_SETTINGS["pdf_layout"])) or DEFAULT_MAPPING_SETTINGS["pdf_layout"],
         "consignment": {},
         "master": {},
     }

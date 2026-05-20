@@ -695,7 +695,7 @@ class App(tk.Frame):
         self.tab_amazon = ttk.Frame(nb)
         self.tab_set = ttk.Frame(nb)
         self.tab_map = ttk.Frame(nb)
-        nb.add(self.tab_gen, text="Generate Labels")
+        nb.add(self.tab_gen, text="Flipkart Labels")
         nb.add(self.tab_amazon, text="Amazon Labels")
         nb.add(self.tab_set, text="Branches & Settings")
         nb.add(self.tab_map, text="Format Mapping")

@@ -1,3 +1,5 @@
+import copy
+
 try:
     from .amazon_rules import clean_text
     from .amazon_validation import normalize_mrp, parse_positive_int
@@ -13,6 +15,51 @@ except Exception:
     pdfcanvas = None
     mm = 2.834645669291339
     code128 = None
+
+
+PDF_LAYOUT_BARTENDER = "BarTender 2UP 101.5x50"
+PDF_LAYOUT_SINGLE = "Single Label Preview 49.8x49.8"
+PDF_LAYOUT_VALUES = [PDF_LAYOUT_BARTENDER, PDF_LAYOUT_SINGLE]
+
+LABEL_WIDTH_MM = 49.8
+LABEL_HEIGHT_MM = 49.8
+PAGE_WIDTH_MM = 101.5
+PAGE_HEIGHT_MM = 50.0
+GAP_X_MM = 1.9
+
+LAYOUT_POSITIONS = {
+    "margin_left_mm": 2.2,
+    "margin_right_mm": 1.8,
+    "heading_top_mm": 4.1,
+    "heading_font": 7.1,
+    "field_top_mm": 8.1,
+    "field_gap_mm": 1.95,
+    "field_label_font": 3.85,
+    "field_value_font": 3.75,
+    "field_label_x_mm": 2.2,
+    "field_colon_x_mm": 16.0,
+    "field_value_x_mm": 17.2,
+    "care_top_mm": 19.2,
+    "care_font": 3.65,
+    "care_underline_offset_mm": 0.42,
+    "address_top_mm": 21.15,
+    "address_gap_mm": 1.5,
+    "address_font": 3.45,
+    "address_stop_before_barcode_mm": 1.1,
+    "barcode_bottom_mm": 7.6,
+    "barcode_height_mm": 6.7,
+    "barcode_margin_x_mm": 6.0,
+    "barcode_text_bottom_mm": 4.35,
+    "barcode_text_font": 4.25,
+    "title_bottom_mm": 1.35,
+    "title_font": 3.55,
+}
+
+
+def normalize_pdf_layout(layout):
+    if layout == PDF_LAYOUT_SINGLE:
+        return PDF_LAYOUT_SINGLE
+    return PDF_LAYOUT_BARTENDER
 
 
 def safe_float(value, default):
@@ -41,8 +88,16 @@ def wrap_text(text, max_chars):
     return lines
 
 
+def fit_text(text, max_chars):
+    text = clean_text(text)
+    if len(text) <= max_chars:
+        return text
+    return text[: max_chars - 1].rstrip() + "."
+
+
 def amazon_title_for_print(title):
-    return f"{clean_text(title)[:50].strip()} New".strip()
+    base = clean_text(title)[:50].strip()
+    return f"{base} New".strip()
 
 
 def amazon_display_heading(category):
@@ -80,142 +135,295 @@ def branch_address_lines(branch):
     return [line for line in lines if clean_text(line) and not line.endswith(": ")]
 
 
-def draw_wrapped(c, x, yy, max_y_bottom, text, font_name, font_size, max_chars, leading_mm, max_lines=None):
-    c.setFont(font_name, font_size)
-    count = 0
-    for part in wrap_text(text, max_chars):
-        if yy < max_y_bottom:
-            break
-        if max_lines is not None and count >= max_lines:
-            break
-        c.drawString(x, yy, part)
-        yy -= leading_mm * mm
-        count += 1
-    return yy
+def build_address_lines(branch):
+    lines = []
+    for raw in branch_address_lines(branch):
+        lines.extend(wrap_text(raw, 42)[:2])
+    lines.extend(
+        [
+            f"Email Id:{clean_text(branch.get('email', ''))}",
+            f"Contact:{clean_text(branch.get('phone', ''))}",
+            f"Origin:{branch_origin_for_print(branch)}",
+        ]
+    )
+    return [fit_text(line, 48) for line in lines if clean_text(line)]
 
 
-def draw_label_value(c, x, y, label, value, colon_x, value_x, font_size=3.9):
-    c.setFont("Helvetica-Bold", font_size)
-    c.drawString(x, y, label)
-    c.setFont("Helvetica", font_size)
-    c.drawString(colon_x, y, ":")
-    c.drawString(value_x, y, clean_text(value))
+def build_amazon_label_payload(row, branch):
+    heading = amazon_display_heading(row.get("main_heading", ""))
+    generic = amazon_display_heading(row.get("generic_name", "")) or heading
+    return {
+        "heading": fit_text(heading, 28),
+        "field_rows": [
+            ("Brand", fit_text(row.get("brand", ""), 30)),
+            ("SKU No", fit_text(row.get("merchant_sku", ""), 30)),
+            ("Net Quantity", "1 N"),
+            ("MRP", fit_text(amazon_mrp_for_print(row.get("mrp", "")), 42)),
+            ("Generic Name", fit_text(generic, 30)),
+        ],
+        "care_heading": "Manufactured by / Marketed By / Customer care Details:",
+        "address_lines": build_address_lines(branch),
+        "fnsku": clean_text(row.get("fnsku", "")),
+        "title": fit_text(amazon_title_for_print(row.get("title", "")), 58),
+    }
+
+
+def get_amazon_layout_positions():
+    return copy.deepcopy(LAYOUT_POSITIONS)
+
+
+def _pdf_y(label_y, label_h, top_mm=None, bottom_mm=None):
+    if bottom_mm is not None:
+        return label_y + bottom_mm * mm
+    return label_y + label_h - top_mm * mm
+
+
+def _pdf_x(label_x, x_mm):
+    return label_x + x_mm * mm
+
+
+def draw_label_value_pdf(c, label_x, label_y, label_h, label, value, top_mm, positions):
+    y = _pdf_y(label_y, label_h, top_mm=top_mm)
+    c.setFont("Helvetica-Bold", positions["field_label_font"])
+    c.drawString(_pdf_x(label_x, positions["field_label_x_mm"]), y, label)
+    c.setFont("Helvetica", positions["field_value_font"])
+    c.drawString(_pdf_x(label_x, positions["field_colon_x_mm"]), y, ":")
+    c.drawString(_pdf_x(label_x, positions["field_value_x_mm"]), y, clean_text(value))
+
+
+def draw_amazon_label_pdf(c, label_x, label_y, label_w, label_h, row, branch):
+    positions = get_amazon_layout_positions()
+    payload = build_amazon_label_payload(row, branch)
+
+    c.rect(label_x, label_y, label_w, label_h, stroke=1, fill=0)
+
+    c.setFont("Helvetica-Bold", positions["heading_font"])
+    c.drawCentredString(
+        label_x + label_w / 2,
+        _pdf_y(label_y, label_h, top_mm=positions["heading_top_mm"]),
+        payload["heading"],
+    )
+
+    for index, (label, value) in enumerate(payload["field_rows"]):
+        draw_label_value_pdf(
+            c,
+            label_x,
+            label_y,
+            label_h,
+            label,
+            value,
+            positions["field_top_mm"] + index * positions["field_gap_mm"],
+            positions,
+        )
+
+    care_y = _pdf_y(label_y, label_h, top_mm=positions["care_top_mm"])
+    left_x = _pdf_x(label_x, positions["margin_left_mm"])
+    right_x = label_x + label_w - positions["margin_right_mm"] * mm
+    c.setFont("Helvetica-Bold", positions["care_font"])
+    c.drawString(left_x, care_y, payload["care_heading"])
+    c.setLineWidth(0.3)
+    c.line(left_x, care_y - positions["care_underline_offset_mm"] * mm, right_x, care_y - positions["care_underline_offset_mm"] * mm)
+
+    c.setFont("Helvetica", positions["address_font"])
+    barcode_top_mm = LABEL_HEIGHT_MM - positions["barcode_bottom_mm"] - positions["barcode_height_mm"]
+    max_address_top = barcode_top_mm - positions["address_stop_before_barcode_mm"]
+    for index, line in enumerate(payload["address_lines"]):
+        top_mm = positions["address_top_mm"] + index * positions["address_gap_mm"]
+        if top_mm > max_address_top:
+            break
+        c.drawString(left_x, _pdf_y(label_y, label_h, top_mm=top_mm), line)
+
+    barcode_y = _pdf_y(label_y, label_h, bottom_mm=positions["barcode_bottom_mm"])
+    barcode_h = positions["barcode_height_mm"] * mm
+    barcode_margin = positions["barcode_margin_x_mm"] * mm
+    if code128 is not None and payload["fnsku"]:
+        try:
+            target_w = label_w - (2 * barcode_margin)
+            bc = code128.Code128(payload["fnsku"], barHeight=barcode_h, barWidth=0.22 * mm, humanReadable=False)
+            if bc.width > target_w:
+                bc = code128.Code128(payload["fnsku"], barHeight=barcode_h, barWidth=bc.barWidth * (target_w / bc.width), humanReadable=False)
+            bc.drawOn(c, label_x + (label_w - bc.width) / 2, barcode_y)
+        except Exception:
+            c.setFont("Helvetica", 4)
+            c.drawCentredString(label_x + label_w / 2, barcode_y + 2 * mm, "BARCODE ERROR")
+
+    c.setFont("Helvetica", positions["barcode_text_font"])
+    c.drawCentredString(label_x + label_w / 2, _pdf_y(label_y, label_h, bottom_mm=positions["barcode_text_bottom_mm"]), payload["fnsku"])
+    c.setFont("Helvetica", positions["title_font"])
+    c.drawCentredString(label_x + label_w / 2, _pdf_y(label_y, label_h, bottom_mm=positions["title_bottom_mm"]), payload["title"])
+
+
+def _preview_font(points, scale, bold=False):
+    size = max(6, int(round(points * scale / 2.834645669291339)))
+    return ("Arial", size, "bold" if bold else "normal")
+
+
+def _preview_x(label_x, scale, x_mm):
+    return label_x + x_mm * scale
+
+
+def _preview_y(label_y, scale, top_mm=None, bottom_mm=None):
+    if bottom_mm is not None:
+        return label_y + (LABEL_HEIGHT_MM - bottom_mm) * scale
+    return label_y + top_mm * scale
+
+
+def _draw_preview_barcode(canvas, x0, y0, x1, y1, value):
+    canvas.create_rectangle(x0, y0, x1, y1, fill="white", outline="")
+    seed = sum(ord(ch) for ch in clean_text(value)) or 17
+    x = x0
+    idx = 0
+    while x < x1:
+        width = 1 + ((seed + idx * 7) % 3)
+        gap = 1 + ((seed + idx * 5) % 2)
+        canvas.create_rectangle(x, y0, min(x + width, x1), y1, fill="#111111", outline="#111111")
+        x += width + gap
+        idx += 1
+
+
+def draw_amazon_label_preview(canvas, label_x, label_y, label_size_px, row, branch):
+    positions = get_amazon_layout_positions()
+    payload = build_amazon_label_payload(row, branch)
+    scale = label_size_px / LABEL_WIDTH_MM
+    label_w = LABEL_WIDTH_MM * scale
+    label_h = LABEL_HEIGHT_MM * scale
+    canvas.create_rectangle(label_x, label_y, label_x + label_w, label_y + label_h, fill="white", outline="#111111", width=2)
+
+    canvas.create_text(
+        label_x + label_w / 2,
+        _preview_y(label_y, scale, top_mm=positions["heading_top_mm"]),
+        text=payload["heading"],
+        anchor="s",
+        fill="#111111",
+        font=_preview_font(positions["heading_font"], scale, bold=True),
+    )
+
+    for index, (label, value) in enumerate(payload["field_rows"]):
+        top_mm = positions["field_top_mm"] + index * positions["field_gap_mm"]
+        yy = _preview_y(label_y, scale, top_mm=top_mm)
+        canvas.create_text(
+            _preview_x(label_x, scale, positions["field_label_x_mm"]),
+            yy,
+            text=label,
+            anchor="sw",
+            fill="#111111",
+            font=_preview_font(positions["field_label_font"], scale, bold=True),
+        )
+        canvas.create_text(
+            _preview_x(label_x, scale, positions["field_colon_x_mm"]),
+            yy,
+            text=":",
+            anchor="sw",
+            fill="#111111",
+            font=_preview_font(positions["field_value_font"], scale),
+        )
+        canvas.create_text(
+            _preview_x(label_x, scale, positions["field_value_x_mm"]),
+            yy,
+            text=value,
+            anchor="sw",
+            fill="#111111",
+            font=_preview_font(positions["field_value_font"], scale),
+        )
+
+    care_y = _preview_y(label_y, scale, top_mm=positions["care_top_mm"])
+    left_x = _preview_x(label_x, scale, positions["margin_left_mm"])
+    right_x = label_x + label_w - positions["margin_right_mm"] * scale
+    canvas.create_text(
+        left_x,
+        care_y,
+        text=payload["care_heading"],
+        anchor="sw",
+        fill="#111111",
+        font=_preview_font(positions["care_font"], scale, bold=True),
+    )
+    underline_y = care_y + positions["care_underline_offset_mm"] * scale
+    canvas.create_line(left_x, underline_y, right_x, underline_y, fill="#111111")
+
+    barcode_top_mm = LABEL_HEIGHT_MM - positions["barcode_bottom_mm"] - positions["barcode_height_mm"]
+    max_address_top = barcode_top_mm - positions["address_stop_before_barcode_mm"]
+    for index, line in enumerate(payload["address_lines"]):
+        top_mm = positions["address_top_mm"] + index * positions["address_gap_mm"]
+        if top_mm > max_address_top:
+            break
+        canvas.create_text(
+            left_x,
+            _preview_y(label_y, scale, top_mm=top_mm),
+            text=line,
+            anchor="sw",
+            fill="#111111",
+            font=_preview_font(positions["address_font"], scale),
+        )
+
+    barcode_left = label_x + positions["barcode_margin_x_mm"] * scale
+    barcode_right = label_x + label_w - positions["barcode_margin_x_mm"] * scale
+    barcode_bottom = label_y + label_h - positions["barcode_bottom_mm"] * scale
+    barcode_top = barcode_bottom - positions["barcode_height_mm"] * scale
+    _draw_preview_barcode(canvas, barcode_left, barcode_top, barcode_right, barcode_bottom, payload["fnsku"])
+    canvas.create_text(
+        label_x + label_w / 2,
+        _preview_y(label_y, scale, bottom_mm=positions["barcode_text_bottom_mm"]),
+        text=payload["fnsku"],
+        anchor="s",
+        fill="#111111",
+        font=_preview_font(positions["barcode_text_font"], scale),
+    )
+    canvas.create_text(
+        label_x + label_w / 2,
+        _preview_y(label_y, scale, bottom_mm=positions["title_bottom_mm"]),
+        text=payload["title"],
+        anchor="s",
+        fill="#111111",
+        font=_preview_font(positions["title_font"], scale),
+    )
+
+
+def _expanded_rows(rows):
+    for row in rows:
+        for _ in range(parse_positive_int(row.get("print_qty", 0))):
+            yield row
+
+
+def generate_amazon_pdf(out, rows, branch, progress_callback=None, layout=PDF_LAYOUT_BARTENDER):
+    if pdfcanvas is None:
+        raise RuntimeError("reportlab missing. Run install_requirements.bat.")
+
+    layout = normalize_pdf_layout(layout)
+    label_w = LABEL_WIDTH_MM * mm
+    label_h = LABEL_HEIGHT_MM * mm
+
+    if layout == PDF_LAYOUT_SINGLE:
+        page_w = LABEL_WIDTH_MM * mm
+        page_h = LABEL_HEIGHT_MM * mm
+        slots = [(0, 0)]
+    else:
+        page_w = PAGE_WIDTH_MM * mm
+        page_h = PAGE_HEIGHT_MM * mm
+        gap_x = GAP_X_MM * mm
+        label_y = (page_h - label_h) / 2
+        slots = [(0, label_y), (label_w + gap_x, label_y)]
+
+    labels = list(_expanded_rows(rows))
+    total = len(labels)
+    c = pdfcanvas.Canvas(str(out), pagesize=(page_w, page_h), pageCompression=1)
+    for index, row in enumerate(labels):
+        slot_index = index % len(slots)
+        if index and slot_index == 0:
+            c.showPage()
+        label_x, label_y = slots[slot_index]
+        draw_amazon_label_pdf(c, label_x, label_y, label_w, label_h, row, branch)
+        done = index + 1
+        if progress_callback and (done == total or done % 100 == 0):
+            progress_callback(done, total)
+    c.save()
+    return total
+
+
+def generate_amazon_pdf_proof(out, row, branch, layout=PDF_LAYOUT_BARTENDER):
+    proof_row = dict(row)
+    proof_row["print_qty"] = 1
+    return generate_amazon_pdf(out, [proof_row], branch, layout=layout)
 
 
 def draw_amazon_pdf_label(c, x, y, w, h, row, branch):
-    c.rect(x, y, w, h, stroke=1, fill=0)
-
-    heading = amazon_display_heading(row.get("main_heading", ""))
-    brand = clean_text(row.get("brand", ""))
-    sku = clean_text(row.get("merchant_sku", ""))
-    fnsku = clean_text(row.get("fnsku", ""))
-    generic = amazon_display_heading(row.get("generic_name", "")) or heading
-    title = amazon_title_for_print(row.get("title", ""))
-    mrp_line = amazon_mrp_for_print(row.get("mrp", ""))
-
-    top_y = y + 45.0 * mm
-    c.setFont("Helvetica-Bold", 7.2)
-    c.drawCentredString(x + w / 2, top_y, heading[:26])
-
-    yy = y + 41.0 * mm
-    row_gap = 1.75 * mm
-    left_x = x + 2.2 * mm
-    colon_x = x + 16.0 * mm
-    value_x = x + 17.2 * mm
-    value_rows = [
-        ("Brand", brand),
-        ("SKU No", sku),
-        ("Net Quantity", "1 N"),
-        ("MRP", mrp_line),
-        ("Generic Name", generic),
-    ]
-    for label, value in value_rows:
-        draw_label_value(c, left_x, yy, label, value, colon_x, value_x, font_size=3.9)
-        yy -= row_gap
-
-    heading_line_y = yy - 1.0 * mm
-    c.setFont("Helvetica-Bold", 3.8)
-    care_text = "Manufactured by / Marketed By / Customer care Details:"
-    c.drawString(left_x, heading_line_y, care_text)
-    c.setLineWidth(0.3)
-    c.line(x + 1.8 * mm, heading_line_y - 0.45 * mm, x + w - 1.8 * mm, heading_line_y - 0.45 * mm)
-
-    address_y = heading_line_y - 2.1 * mm
-    c.setFont("Helvetica", 3.55)
-    for line in branch_address_lines(branch):
-        for part in wrap_text(line, 42)[:2]:
-            if address_y < y + 14.0 * mm:
-                break
-            c.drawString(left_x, address_y, part)
-            address_y -= 1.45 * mm
-
-    for line in [
-        f"Email Id:{clean_text(branch.get('email', ''))}",
-        f"Contact:{clean_text(branch.get('phone', ''))}",
-        f"Origin:{branch_origin_for_print(branch)}",
-    ]:
-        if address_y < y + 14.0 * mm:
-            break
-        c.drawString(left_x, address_y, line)
-        address_y -= 1.45 * mm
-
-    barcode_y = y + 6.8 * mm
-    barcode_h = 6.6 * mm
-    barcode_text_y = y + 4.0 * mm
-    title_y = y + 1.4 * mm
-
-    if code128 is not None and fnsku:
-        try:
-            target_w = w - 12.0 * mm
-            bc = code128.Code128(fnsku, barHeight=barcode_h, barWidth=0.22 * mm, humanReadable=False)
-            if bc.width > target_w:
-                bw = bc.barWidth * (target_w / bc.width)
-                bc = code128.Code128(fnsku, barHeight=barcode_h, barWidth=bw, humanReadable=False)
-            bc.drawOn(c, x + (w - bc.width) / 2, barcode_y)
-        except Exception:
-            c.setFont("Helvetica", 4)
-            c.drawCentredString(x + w / 2, y + 5.0 * mm, "BARCODE ERROR")
-
-    c.setFont("Helvetica", 4.4)
-    c.drawCentredString(x + w / 2, barcode_text_y, fnsku)
-    c.setFont("Helvetica", 3.65)
-    c.drawCentredString(x + w / 2, title_y, title[:58])
-
-
-def generate_amazon_pdf(out, rows, branch, progress_callback=None):
-    if pdfcanvas is None:
-        raise RuntimeError("reportlab missing. Run install_requirements.bat.")
-    label_w_mm = 49.8
-    label_h_mm = 49.8
-    page_w_mm = 101.5
-    page_h_mm = 50.0
-    gap_x_mm = 101.5 - (49.8 * 2)
-    auto_margin_x_mm = max(0.0, (page_w_mm - (label_w_mm * 2) - gap_x_mm) / 2.0)
-    margin_x_mm = auto_margin_x_mm
-
-    label_w = label_w_mm * mm
-    label_h = label_h_mm * mm
-    page_w = page_w_mm * mm
-    page_h = page_h_mm * mm
-    gap_x = gap_x_mm * mm
-    margin_x = margin_x_mm * mm
-
-    total = sum(parse_positive_int(row.get("print_qty", 0)) for row in rows)
-    c = pdfcanvas.Canvas(str(out), pagesize=(page_w, page_h), pageCompression=1)
-    done = 0
-    col = 0
-    for row in rows:
-        qty = parse_positive_int(row.get("print_qty", 0))
-        for _ in range(qty):
-            x = margin_x + col * (label_w + gap_x)
-            draw_amazon_pdf_label(c, x, (page_h - label_h) / 2, label_w, label_h, row, branch)
-            done += 1
-            if progress_callback and (done == total or done % 100 == 0):
-                progress_callback(done, total)
-            col += 1
-            if col >= 2:
-                col = 0
-                if done < total:
-                    c.showPage()
-    c.save()
-    return total
+    draw_amazon_label_pdf(c, x, y, w, h, row, branch)

@@ -61,12 +61,12 @@ def output_dir():
 def printer_settings_path():
     if root_dir is not None:
         try:
-            p = root_dir() / "Database" / "marketplace_v12" / "printer_settings.json"
+            p = root_dir() / "Database" / "marketplace_v12" / "amazon_printer_settings.json"
             p.parent.mkdir(parents=True, exist_ok=True)
             return p
         except Exception:
             pass
-    return BASE_DIR / "data" / "printer_settings.json"
+    return BASE_DIR / "data" / "amazon_printer_settings.json"
 
 
 class AmazonLabelFrame(ttk.Frame):
@@ -99,6 +99,7 @@ class AmazonLabelFrame(ttk.Frame):
         self.master_status_var = tk.StringVar(value="Master Listing: not loaded")
         self.consignment_status_var = tk.StringVar(value="Consignment File: not loaded")
         self.branch_var = tk.StringVar(value=self.mapping.get("selected_branch", ""))
+        self.layout_var = tk.StringVar(value=amazon_label_renderer.normalize_pdf_layout(self.mapping.get("pdf_layout", amazon_label_renderer.PDF_LAYOUT_BARTENDER)))
         self.qty_var = tk.StringVar(value="1")
 
         self.build_ui()
@@ -134,18 +135,37 @@ class AmazonLabelFrame(ttk.Frame):
         self.pdf_btn.pack(side="left", padx=3)
         self.prn_btn = ttk.Button(output_row, text="Generate Amazon PRN", command=self.generate_amazon_prn_clicked)
         self.prn_btn.pack(side="left", padx=3)
-        ttk.Button(output_row, text="Open Last PDF", command=self.open_last_pdf).pack(side="left", padx=3)
-        ttk.Button(output_row, text="Open Last PRN", command=self.open_last_prn).pack(side="left", padx=3)
-        ttk.Button(output_row, text="Print Last PRN Direct", command=self.print_last_prn_direct).pack(side="left", padx=3)
+        self.prn_print_btn = ttk.Button(output_row, text="Generate PRN & Print", command=self.generate_amazon_prn_and_print_clicked)
+        self.prn_print_btn.pack(side="left", padx=3)
+        ttk.Button(output_row, text="Select Printer", command=self.select_printer_dialog).pack(side="left", padx=3)
+        ttk.Button(output_row, text="Print Last PRN", command=self.print_last_prn).pack(side="left", padx=3)
+
+        output_more_row = ttk.Frame(toolbar)
+        output_more_row.pack(fill="x", pady=2)
+        ttk.Label(output_more_row, text="").pack(side="left", padx=(0, 52))
+        ttk.Button(output_more_row, text="Open PRN Folder", command=self.open_prn_folder).pack(side="left", padx=3)
+        self.pdf_preview_btn = ttk.Button(output_more_row, text="PDF Preview", command=self.generate_selected_pdf_preview)
+        self.pdf_preview_btn.pack(side="left", padx=3)
+        ttk.Button(output_more_row, text="Open PDF", command=self.open_last_pdf).pack(side="left", padx=3)
+        ttk.Button(output_more_row, text="Open Output Folder", command=self.open_output_folder).pack(side="left", padx=3)
 
         branch_row = ttk.Frame(toolbar)
         branch_row.pack(fill="x", pady=2)
-        ttk.Label(branch_row, text="4) Branch:").pack(side="left", padx=(0, 4))
+        ttk.Label(branch_row, text="4) Branch / Layout:").pack(side="left", padx=(0, 4))
         self.branch_combo = ttk.Combobox(branch_row, textvariable=self.branch_var, state="readonly", width=30)
         self.branch_combo.pack(side="left", padx=3)
         self.branch_combo.bind("<<ComboboxSelected>>", self.on_branch_selected)
         self.branch_combo.bind("<Button-1>", lambda _event: self.refresh_branch_list())
-        ttk.Label(branch_row, text="Amazon Output Layout: BarTender 2UP 101.5x50 PRN style").pack(side="left", padx=12)
+        ttk.Label(branch_row, text="PDF Layout:").pack(side="left", padx=(14, 4))
+        self.layout_combo = ttk.Combobox(
+            branch_row,
+            textvariable=self.layout_var,
+            state="readonly",
+            width=28,
+            values=amazon_label_renderer.PDF_LAYOUT_VALUES,
+        )
+        self.layout_combo.pack(side="left", padx=3)
+        self.layout_combo.bind("<<ComboboxSelected>>", self.on_layout_selected)
 
         status_box = ttk.Frame(self)
         status_box.pack(fill="x", padx=8, pady=(0, 4))
@@ -255,6 +275,21 @@ class AmazonLabelFrame(ttk.Frame):
             log_error(traceback.format_exc())
         if self.consignment_df is not None:
             self.rebuild_amazon_rows()
+
+    def selected_pdf_layout(self):
+        layout = amazon_label_renderer.normalize_pdf_layout(self.layout_var.get())
+        if self.layout_var.get() != layout:
+            self.layout_var.set(layout)
+        return layout
+
+    def on_layout_selected(self, _event=None):
+        self.mapping["pdf_layout"] = self.selected_pdf_layout()
+        try:
+            amazon_rules.save_mapping_settings(self.mapping)
+        except Exception:
+            log_error(traceback.format_exc())
+        self.preview_selected(silent=True)
+        self.set_status(f"Amazon PDF layout set to: {self.layout_var.get()}")
 
     # ---------------- Background helpers ----------------
     def set_status(self, text):
@@ -674,60 +709,7 @@ class AmazonLabelFrame(ttk.Frame):
         size = min(w - pad * 2, h - pad * 2)
         x0 = (w - size) / 2
         y0 = (h - size) / 2
-        x1 = x0 + size
-        y1 = y0 + size
-        c.create_rectangle(x0, y0, x1, y1, fill="white", outline="#111111", width=2)
-
-        branch = self.current_branch()
-        heading = amazon_label_renderer.amazon_display_heading(row.get("main_heading", ""))
-        generic = amazon_label_renderer.amazon_display_heading(row.get("generic_name", "")) or heading
-        mrp = amazon_label_renderer.amazon_mrp_for_print(row.get("mrp", ""))
-        title = amazon_label_renderer.amazon_title_for_print(row.get("title", ""))
-        left = x0 + size * 0.06
-        yy = y0 + size * 0.08
-        c.create_text((x0 + x1) / 2, yy, text=heading[:28], fill="#111111", font=("Arial", 13, "bold"))
-        yy += size * 0.075
-
-        rows = [
-            ("Brand", row.get("brand", "")),
-            ("SKU No", row.get("merchant_sku", "")),
-            ("Net Quantity", "1 N"),
-            ("MRP", mrp),
-            ("Generic Name", generic),
-        ]
-        for label, value in rows:
-            c.create_text(left, yy, text=f"{label} :", anchor="w", fill="#111111", font=("Arial", 8, "bold"))
-            c.create_text(left + size * 0.34, yy, text=str(value)[:42], anchor="w", fill="#111111", font=("Arial", 8))
-            yy += size * 0.055
-
-        yy += size * 0.02
-        care = "Manufactured by / Marketed By / Customer care Details:"
-        c.create_text(left, yy, text=care, anchor="w", fill="#111111", font=("Arial", 7, "bold underline"))
-        yy += size * 0.045
-        address_lines = amazon_label_renderer.branch_address_lines(branch)
-        address_lines.extend(
-            [
-                f"Email Id:{amazon_rules.clean_text(branch.get('email', ''))}",
-                f"Contact:{amazon_rules.clean_text(branch.get('phone', ''))}",
-                f"Origin:{amazon_label_renderer.branch_origin_for_print(branch)}",
-            ]
-        )
-        for line in address_lines[:6]:
-            c.create_text(left, yy, text=str(line)[:50], anchor="w", fill="#111111", font=("Arial", 7))
-            yy += size * 0.04
-
-        barcode_top = y0 + size * 0.72
-        barcode_left = x0 + size * 0.18
-        barcode_right = x1 - size * 0.18
-        barcode_bottom = barcode_top + size * 0.12
-        fnsku = amazon_rules.clean_text(row.get("fnsku", ""))
-        c.create_rectangle(barcode_left, barcode_top, barcode_right, barcode_bottom, fill="white", outline="")
-        for i in range(24):
-            x = barcode_left + i * (barcode_right - barcode_left) / 24
-            width = 1 if i % 3 else 2
-            c.create_line(x, barcode_top, x, barcode_bottom, fill="#111111", width=width)
-        c.create_text((x0 + x1) / 2, barcode_bottom + size * 0.045, text=fnsku, fill="#111111", font=("Arial", 8))
-        c.create_text((x0 + x1) / 2, y1 - size * 0.04, text=title[:58], fill="#111111", font=("Arial", 7))
+        amazon_label_renderer.draw_amazon_label_preview(c, x0, y0, size, row, self.current_branch())
 
     # ---------------- Generation ----------------
     def prepare_generation(self, output_kind):
@@ -757,6 +739,7 @@ class AmazonLabelFrame(ttk.Frame):
         if not prepared:
             return
         total, rows_snapshot, branch = prepared
+        layout = self.selected_pdf_layout()
         stamp = time.strftime("%Y%m%d_%H%M%S")
         out = output_dir() / f"amazon_labels_{stamp}.pdf"
         report_out = output_dir() / f"amazon_label_report_{stamp}.csv"
@@ -766,7 +749,13 @@ class AmazonLabelFrame(ttk.Frame):
 
         def worker():
             amazon_validation.write_report_csv(report_out, rows_snapshot)
-            generated = amazon_label_renderer.generate_amazon_pdf(out, rows_snapshot, branch, progress_callback=progress)
+            generated = amazon_label_renderer.generate_amazon_pdf(
+                out,
+                rows_snapshot,
+                branch,
+                progress_callback=progress,
+                layout=layout,
+            )
             return generated, str(out), str(report_out)
 
         def done(result):
@@ -780,6 +769,12 @@ class AmazonLabelFrame(ttk.Frame):
         self.run_background([self.pdf_btn], f"Generating {total} Amazon PDF labels in background...", worker, done)
 
     def generate_amazon_prn_clicked(self):
+        self.start_amazon_prn_generation(print_after=False)
+
+    def generate_amazon_prn_and_print_clicked(self):
+        self.start_amazon_prn_generation(print_after=True)
+
+    def start_amazon_prn_generation(self, print_after=False):
         prepared = self.prepare_generation("PRN")
         if not prepared:
             return
@@ -802,9 +797,42 @@ class AmazonLabelFrame(ttk.Frame):
             self.last_report = report_path
             self.record_amazon_output("PRN", prn_path, report_path, generated)
             self.set_status(f"Amazon PRN generated: {generated} labels -> {prn_path}")
-            messagebox.showinfo("Amazon PRN generated", f"Amazon PRN generated successfully.\n\nLabels: {generated}\nPRN:\n{prn_path}\n\nReport CSV:\n{report_path}")
+            if print_after:
+                self.print_last_prn()
+            else:
+                messagebox.showinfo("Amazon PRN generated", f"Amazon PRN generated successfully.\n\nLabels: {generated}\nPRN:\n{prn_path}\n\nReport CSV:\n{report_path}")
 
-        self.run_background([self.prn_btn], f"Generating {total} Amazon PRN labels in background...", worker, done)
+        buttons = [self.prn_btn]
+        if hasattr(self, "prn_print_btn"):
+            buttons.append(self.prn_print_btn)
+        self.run_background(buttons, f"Generating {total} Amazon PRN labels in background...", worker, done)
+
+    def generate_selected_pdf_preview(self):
+        if amazon_label_renderer.pdfcanvas is None:
+            messagebox.showerror("Missing package", "reportlab is missing. Run install_requirements.bat first.")
+            return
+        row = self.selected_row()
+        if not row:
+            messagebox.showwarning("No selection", "Select an Amazon row first.")
+            return
+        stamp = time.strftime("%Y%m%d_%H%M%S")
+        out = output_dir() / f"amazon_label_preview_{stamp}.pdf"
+        row_snapshot = copy.deepcopy(row)
+        branch = copy.deepcopy(self.current_branch())
+        layout = self.selected_pdf_layout()
+
+        def worker():
+            generated = amazon_label_renderer.generate_amazon_pdf_proof(out, row_snapshot, branch, layout=layout)
+            return generated, str(out)
+
+        def done(result):
+            generated, pdf_path = result
+            self.last_pdf = pdf_path
+            self.record_amazon_output("PDF Preview", pdf_path, "", generated)
+            self.set_status(f"Amazon proof PDF generated -> {pdf_path}")
+            self.open_existing_file(pdf_path, "Generate Amazon PDF preview first.")
+
+        self.run_background([self.pdf_preview_btn], "Generating selected Amazon proof PDF...", worker, done)
 
     def record_amazon_output(self, kind, output_path_value, report_path, total):
         if record_output is None:
@@ -826,9 +854,6 @@ class AmazonLabelFrame(ttk.Frame):
     def open_last_pdf(self):
         self.open_existing_file(self.last_pdf, "Generate Amazon PDF first.")
 
-    def open_last_prn(self):
-        self.open_existing_file(self.last_prn, "Generate Amazon PRN first.")
-
     def open_existing_file(self, path, warning):
         if not path or not os.path.exists(path):
             messagebox.showwarning("Missing file", warning)
@@ -837,6 +862,22 @@ class AmazonLabelFrame(ttk.Frame):
             os.startfile(path)
         except Exception as exc:
             messagebox.showerror("Open file failed", str(exc))
+
+    def open_folder(self, folder):
+        try:
+            Path(folder).mkdir(parents=True, exist_ok=True)
+            os.startfile(str(folder))
+        except Exception as exc:
+            messagebox.showerror("Open folder failed", str(exc))
+
+    def open_prn_folder(self):
+        if self.last_prn and os.path.exists(self.last_prn):
+            self.open_folder(Path(self.last_prn).parent)
+        else:
+            self.open_folder(output_dir())
+
+    def open_output_folder(self):
+        self.open_folder(output_dir())
 
     def load_selected_printer(self):
         try:
@@ -847,6 +888,86 @@ class AmazonLabelFrame(ttk.Frame):
         except Exception:
             log_error(traceback.format_exc())
         return ""
+
+    def save_selected_printer(self, printer_name):
+        try:
+            p = printer_settings_path()
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(json.dumps({"selected_printer": printer_name or ""}, indent=2), encoding="utf-8")
+            self.set_status(f"Amazon printer selected: {printer_name}")
+        except Exception:
+            log_error(traceback.format_exc())
+
+    def list_windows_printers(self):
+        try:
+            import win32print
+        except Exception:
+            return None
+        try:
+            flags = win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS
+            names = []
+            for item in win32print.EnumPrinters(flags):
+                if len(item) >= 3 and item[2]:
+                    names.append(item[2])
+            return sorted(dict.fromkeys(names))
+        except Exception:
+            log_error(traceback.format_exc())
+            return []
+
+    def select_printer_dialog(self):
+        printers = self.list_windows_printers()
+        if printers is None:
+            messagebox.showinfo(
+                "Manual PRN print",
+                "pywin32 is missing, so Windows printer selection is not available.\n\nManual command:\n"
+                + self.manual_prn_instruction(),
+            )
+            return
+
+        dlg = tk.Toplevel(self.winfo_toplevel())
+        dlg.title("Select Amazon PRN Printer")
+        dlg.geometry("560x430")
+        dlg.transient(self.winfo_toplevel())
+        dlg.grab_set()
+        ttk.Label(dlg, text="Select printer for Amazon PRN labels", font=("Segoe UI", 12, "bold")).pack(anchor="w", padx=14, pady=(14, 4))
+        ttk.Label(dlg, text="This sends TSPL/PRN commands directly as RAW data.").pack(anchor="w", padx=14, pady=(0, 10))
+        frame = ttk.Frame(dlg)
+        frame.pack(fill="both", expand=True, padx=14, pady=8)
+        lb = tk.Listbox(frame, height=12)
+        lb.pack(side="left", fill="both", expand=True)
+        sb = ttk.Scrollbar(frame, command=lb.yview)
+        sb.pack(side="right", fill="y")
+        lb.configure(yscrollcommand=sb.set)
+        selected = self.load_selected_printer()
+        for printer in printers:
+            lb.insert("end", printer)
+            if printer == selected:
+                lb.selection_set("end")
+        manual_var = tk.StringVar(value=selected)
+        row = ttk.Frame(dlg)
+        row.pack(fill="x", padx=14, pady=8)
+        ttk.Label(row, text="Manual printer name:").pack(side="left")
+        ttk.Entry(row, textvariable=manual_var).pack(side="left", fill="x", expand=True, padx=8)
+
+        def use_selected():
+            sel = lb.curselection()
+            if sel:
+                manual_var.set(lb.get(sel[0]))
+
+        def save_and_close():
+            use_selected()
+            name = manual_var.get().strip()
+            if not name:
+                messagebox.showwarning("Printer required", "Select or type a printer name.", parent=dlg)
+                return
+            self.save_selected_printer(name)
+            dlg.destroy()
+
+        buttons = ttk.Frame(dlg)
+        buttons.pack(fill="x", padx=14, pady=(4, 14))
+        ttk.Button(buttons, text="Use Selected", command=use_selected).pack(side="left", padx=4)
+        ttk.Button(buttons, text="Save Printer", command=save_and_close).pack(side="left", padx=4)
+        ttk.Button(buttons, text="Cancel", command=dlg.destroy).pack(side="right", padx=4)
 
     def find_tsc_printer(self, win32print):
         try:
@@ -860,12 +981,18 @@ class AmazonLabelFrame(ttk.Frame):
             log_error(traceback.format_exc())
         return ""
 
+    def default_printer(self, win32print):
+        try:
+            return win32print.GetDefaultPrinter() or ""
+        except Exception:
+            return ""
+
     def manual_prn_instruction(self):
         if not self.last_prn:
             return 'copy /b "file.prn" "\\\\COMPUTER\\TSC TE244"'
         return f'copy /b "{self.last_prn}" "\\\\COMPUTER\\TSC TE244"'
 
-    def print_last_prn_direct(self):
+    def print_last_prn(self):
         if not self.last_prn or not os.path.exists(self.last_prn):
             messagebox.showwarning("No PRN", "Generate Amazon PRN first.")
             return
@@ -879,11 +1006,11 @@ class AmazonLabelFrame(ttk.Frame):
             )
             return
 
-        printer = self.load_selected_printer() or self.find_tsc_printer(win32print)
+        printer = self.load_selected_printer() or self.default_printer(win32print) or self.find_tsc_printer(win32print)
         if not printer:
             messagebox.showinfo(
                 "Manual PRN print",
-                "No saved TSC printer was found.\n\nManual command:\n" + self.manual_prn_instruction(),
+                "No saved or default printer was found.\n\nManual command:\n" + self.manual_prn_instruction(),
             )
             return
 
@@ -911,3 +1038,6 @@ class AmazonLabelFrame(ttk.Frame):
                 + "\n\nError:\n"
                 + str(exc),
             )
+
+    def print_last_prn_direct(self):
+        self.print_last_prn()

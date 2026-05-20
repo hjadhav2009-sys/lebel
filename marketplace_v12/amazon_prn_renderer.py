@@ -1,9 +1,25 @@
 try:
-    from .amazon_label_renderer import amazon_display_heading, amazon_mrp_for_print, amazon_title_for_print, branch_origin_for_print, wrap_text
+    from .amazon_label_renderer import (
+        GAP_X_MM,
+        LABEL_HEIGHT_MM,
+        LABEL_WIDTH_MM,
+        PAGE_HEIGHT_MM,
+        PAGE_WIDTH_MM,
+        build_amazon_label_payload,
+        get_amazon_layout_positions,
+    )
     from .amazon_rules import clean_text
     from .amazon_validation import parse_positive_int
 except ImportError:
-    from amazon_label_renderer import amazon_display_heading, amazon_mrp_for_print, amazon_title_for_print, branch_origin_for_print, wrap_text
+    from amazon_label_renderer import (
+        GAP_X_MM,
+        LABEL_HEIGHT_MM,
+        LABEL_WIDTH_MM,
+        PAGE_HEIGHT_MM,
+        PAGE_WIDTH_MM,
+        build_amazon_label_payload,
+        get_amazon_layout_positions,
+    )
     from amazon_rules import clean_text
     from amazon_validation import parse_positive_int
 
@@ -23,6 +39,13 @@ HEADER = [
     "CODEPAGE 1252",
 ]
 
+DOTS_PER_MM = 8.0
+BARCODE_HEIGHT_DOTS = 42
+
+
+def dots(mm_value):
+    return int(round(float(mm_value) * DOTS_PER_MM))
+
 
 def tspl_escape(value):
     return clean_text(value).replace('"', "'")
@@ -36,70 +59,76 @@ def barcode_cmd(x, y, value):
     return f'BARCODE {x},{y},"93",42,0,180,2,4,"{tspl_escape(value)}"'
 
 
-def split_address(branch):
-    lines = []
-    for raw in (branch.get("marketed_by", "") or branch.get("company", ""), branch.get("address", "")):
-        for line in wrap_text(raw, 34):
-            if line:
-                lines.append(line)
-    return lines[:4]
+def y_from_top(top_mm, adjust_dots=0):
+    return dots(PAGE_HEIGHT_MM - top_mm) + int(adjust_dots)
 
 
-def label_payload(row, branch):
-    heading = amazon_display_heading(row.get("main_heading", ""))
-    brand = clean_text(row.get("brand", ""))
-    sku = clean_text(row.get("merchant_sku", ""))
-    generic = amazon_display_heading(row.get("generic_name", "")) or heading
-    return {
-        "heading": heading,
-        "brand": brand,
-        "sku": sku,
-        "qty": "1 N",
-        "mrp": amazon_mrp_for_print(row.get("mrp", "")),
-        "generic": generic,
-        "fnsku": clean_text(row.get("fnsku", "")),
-        "title": amazon_title_for_print(row.get("title", "")),
-        "address": split_address(branch),
-        "email": f"Email Id:{clean_text(branch.get('email', ''))}",
-        "contact": f"Contact:{clean_text(branch.get('phone', ''))}",
-        "origin": f"Origin:{branch_origin_for_print(branch)}",
-    }
+def label_right_dots(side):
+    left_mm = 0.0 if side == "left" else LABEL_WIDTH_MM + GAP_X_MM
+    return dots(left_mm + LABEL_WIDTH_MM)
 
 
-def add_field(lines, x, y, label, value):
-    lines.append(text_cmd(x, y, "0", 180, 4, 4, label))
-    lines.append(text_cmd(x - 110, y, "0", 180, 4, 4, ":"))
-    lines.append(text_cmd(x - 124, y, "0", 180, 4, 4, value))
+def x_from_left_mm(side, x_mm):
+    right = label_right_dots(side)
+    return right - dots(x_mm)
+
+
+def text_fit(value, max_chars):
+    value = clean_text(value)
+    if len(value) <= max_chars:
+        return value
+    return value[: max_chars - 1].rstrip() + "."
+
+
+def add_field(lines, side, y, label, value):
+    field_x = x_from_left_mm(side, 3.9)
+    colon_x = x_from_left_mm(side, 17.6)
+    value_x = x_from_left_mm(side, 19.1)
+    lines.append(text_cmd(field_x, y, "0", 180, 4, 4, label))
+    lines.append(text_cmd(colon_x, y, "0", 180, 4, 4, ":"))
+    lines.append(text_cmd(value_x, y, "0", 180, 4, 4, text_fit(value, 42)))
 
 
 def add_label(lines, row, branch, side):
-    payload = label_payload(row, branch)
-    if side == "left":
-        title_x, field_x, barcode_x, barcode_text_x, bottom_x = 283, 367, 350, 288, 367
-    else:
-        title_x, field_x, barcode_x, barcode_text_x, bottom_x = 694, 778, 761, 699, 778
+    positions = get_amazon_layout_positions()
+    payload = build_amazon_label_payload(row, branch)
 
-    lines.append(text_cmd(title_x, 374, "0", 180, 13, 9, f"{payload['heading']} "))
-    add_field(lines, field_x, 342, "Brand", payload["brand"])
-    add_field(lines, field_x, 326, "SKU No", payload["sku"])
-    add_field(lines, field_x, 310, "Net Quantity", payload["qty"])
-    add_field(lines, field_x, 294, "MRP", payload["mrp"])
-    add_field(lines, field_x, 278, "Generic Name", payload["generic"])
+    heading_x = x_from_left_mm(side, 14.4)
+    field_x = x_from_left_mm(side, 3.9)
+    barcode_x = x_from_left_mm(side, positions["barcode_margin_x_mm"])
+    barcode_text_x = x_from_left_mm(side, 13.8)
+    title_x = field_x
 
-    lines.append(text_cmd(field_x, 252, "0", 180, 3, 4, "Manufactured by / Marketed By / Customer care Details:"))
-    y = 232
-    for addr in payload["address"]:
-        lines.append(text_cmd(field_x, y, "0", 180, 3, 4, addr))
-        y -= 14
-    lines.append(text_cmd(field_x, y, "0", 180, 3, 4, payload["email"]))
-    y -= 14
-    lines.append(text_cmd(field_x, y, "0", 180, 3, 4, payload["contact"]))
-    y -= 14
-    lines.append(text_cmd(field_x, y, "0", 180, 3, 4, payload["origin"]))
+    lines.append(text_cmd(heading_x, y_from_top(positions["heading_top_mm"], 7), "0", 180, 13, 9, payload["heading"]))
 
-    lines.append(barcode_cmd(barcode_x, 109, payload["fnsku"]))
-    lines.append(text_cmd(barcode_text_x, 63, "ROMAN.TTF", 180, 1, 8, payload["fnsku"]))
-    lines.append(text_cmd(bottom_x, 37, "0", 180, 5, 6, payload["title"]))
+    for index, (label, value) in enumerate(payload["field_rows"]):
+        y = y_from_top(positions["field_top_mm"] + index * positions["field_gap_mm"], 4)
+        add_field(lines, side, y, label, value)
+
+    lines.append(
+        text_cmd(
+            field_x,
+            y_from_top(positions["care_top_mm"], 2),
+            "0",
+            180,
+            3,
+            4,
+            payload["care_heading"],
+        )
+    )
+
+    barcode_top_mm = LABEL_HEIGHT_MM - positions["barcode_bottom_mm"] - positions["barcode_height_mm"]
+    max_address_top = barcode_top_mm - positions["address_stop_before_barcode_mm"]
+    for index, line in enumerate(payload["address_lines"]):
+        top_mm = positions["address_top_mm"] + index * positions["address_gap_mm"]
+        if top_mm > max_address_top:
+            break
+        lines.append(text_cmd(field_x, y_from_top(top_mm, 1), "0", 180, 3, 4, text_fit(line, 48)))
+
+    barcode_y = dots(positions["barcode_bottom_mm"]) + BARCODE_HEIGHT_DOTS
+    lines.append(barcode_cmd(barcode_x, barcode_y, payload["fnsku"]))
+    lines.append(text_cmd(barcode_text_x, dots(positions["barcode_text_bottom_mm"]) + 28, "ROMAN.TTF", 180, 1, 8, payload["fnsku"]))
+    lines.append(text_cmd(title_x, dots(positions["title_bottom_mm"]) + 25, "0", 180, 5, 6, payload["title"]))
 
 
 def expanded_rows(rows):
