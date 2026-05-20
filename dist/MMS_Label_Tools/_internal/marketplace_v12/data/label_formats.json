@@ -1,0 +1,378 @@
+{
+  "bangle_bracelet_armlet": {
+    "title": "Bangle Bracelet Armlet",
+    "generic": "Bracelet",
+    "fields": [
+      [
+        "Brand",
+        [
+          "brand"
+        ]
+      ],
+      [
+        "Model Number",
+        [
+          "model_number",
+          "model no",
+          "model"
+        ]
+      ],
+      [
+        "Bangle Size",
+        [
+          "bangle_size",
+          "size"
+        ]
+      ],
+      [
+        "Diameter",
+        [
+          "diameter"
+        ]
+      ],
+      [
+        "Color",
+        [
+          "color"
+        ]
+      ],
+      [
+        "Pack Of",
+        [
+          "pack_of",
+          "pack of"
+        ]
+      ]
+    ]
+  },
+  "pendant_locket": {
+    "title": "Pendant Locket",
+    "generic": "Pendant Locket",
+    "fields": [
+      [
+        "Brand",
+        [
+          "brand"
+        ]
+      ],
+      [
+        "Model Number",
+        [
+          "model_number",
+          "model no",
+          "model"
+        ]
+      ],
+      [
+        "Plating",
+        [
+          "plating"
+        ]
+      ],
+      [
+        "Brand Color",
+        [
+          "brand_color",
+          "color"
+        ]
+      ],
+      [
+        "Body Material",
+        [
+          "body_material",
+          "material"
+        ]
+      ]
+    ]
+  },
+  "key_chain": {
+    "title": "Key Chain",
+    "generic": "Key Chain",
+    "fields": [
+      [
+        "Comment",
+        [
+          "Comment",
+          "comment"
+        ]
+      ],
+      [
+        "Color",
+        [
+          "color"
+        ]
+      ],
+      [
+        "Model Number",
+        [
+          "model_number",
+          "model no",
+          "model"
+        ]
+      ],
+      [
+        "Brand",
+        [
+          "brand"
+        ]
+      ]
+    ]
+  },
+  "earring": {
+    "title": "Earring",
+    "generic": "Earring",
+    "fields": [
+      [
+        "Brand",
+        [
+          "brand"
+        ]
+      ],
+      [
+        "Model Number",
+        [
+          "model_number",
+          "model no",
+          "model"
+        ]
+      ],
+      [
+        "Sales Package",
+        [
+          "sales_package",
+          "sales package"
+        ]
+      ],
+      [
+        "Type",
+        [
+          "type"
+        ]
+      ],
+      [
+        "Color",
+        [
+          "color"
+        ]
+      ]
+    ]
+  },
+  "jewellery_set": {
+    "title": "Jewellery Set",
+    "generic": "Jewellery Set",
+    "fields": [
+      [
+        "Brand",
+        [
+          "brand"
+        ]
+      ],
+      [
+        "Model Number",
+        [
+          "model_number",
+          "model no",
+          "model"
+        ]
+      ],
+      [
+        "Sales Package Id",
+        [
+          "sales_package_id",
+          "sales_package",
+          "sales package"
+        ]
+      ],
+      [
+        "Color",
+        [
+          "color"
+        ]
+      ]
+    ]
+  },
+  "necklace_chain": {
+    "title": "Necklace Chain",
+    "generic": "Necklace Chain",
+    "fields": [
+      [
+        "Brand",
+        [
+          "brand"
+        ]
+      ],
+      [
+        "Base Material",
+        [
+          "base_material",
+          "material"
+        ]
+      ],
+      [
+        "Type",
+        [
+          "type"
+        ]
+      ],
+      [
+        "Model Number",
+        [
+          "model_number",
+          "model no",
+          "model"
+        ]
+      ],
+      [
+        "Color",
+        [
+          "color"
+        ]
+      ]
+    ]
+  },
+  "car_hanging_ornament": {
+    "title": "Car Hanging Ornament",
+    "generic": "Car Hanging Ornament",
+    "fields": [
+      [
+        "Brand",
+        [
+          "brand"
+        ]
+      ],
+      [
+        "Model Name",
+        [
+          "model_name",
+          "name"
+        ]
+      ],
+      [
+        "Model Number",
+        [
+          "model_number",
+          "model no",
+          "model"
+        ]
+      ],
+      [
+        "Color",
+        [
+          "color"
+        ]
+      ]
+    ]
+  },
+  "car_hanger": {
+    "title": "Car Hanging Ornament",
+    "generic": "Car Hanging Ornament",
+    "fields": [
+      [
+        "Brand",
+        [
+          "brand"
+        ]
+      ],
+      [
+        "Model Name",
+        [
+          "model_name",
+          "name"
+        ]
+      ],
+      [
+        "Model Number",
+        [
+          "model_number",
+          "model no",
+          "model"
+        ]
+      ],
+      [
+        "Color",
+        [
+          "color"
+        ]
+      ]
+    ]
+  },
+  "ring": {
+    "title": "Ring",
+    "generic": "Ring",
+    "fields": [
+      [
+        "Brand",
+        [
+          "brand"
+        ]
+      ],
+      [
+        "Model Number",
+        [
+          "model_number",
+          "model no",
+          "model"
+        ]
+      ],
+      [
+        "Type",
+        [
+          "type"
+        ]
+      ],
+      [
+        "Ring Size",
+        [
+          "ring_size",
+          "size"
+        ]
+      ]
+    ]
+  },
+  "showpiece_figurine": {
+    "title": "Showpiece Figurine",
+    "generic": "Showpiece Figurine",
+    "fields": [
+      [
+        "Brand",
+        [
+          "brand"
+        ]
+      ],
+      [
+        "Model Number",
+        [
+          "model_number",
+          "model no",
+          "model"
+        ]
+      ],
+      [
+        "Color",
+        [
+          "color"
+        ]
+      ]
+    ]
+  },
+  "brooch": {
+    "title": "Brooch",
+    "generic": "Brooch",
+    "fields": [
+      [
+        "Brand",
+        [
+          "brand"
+        ]
+      ],
+      [
+        "Model Id",
+        [
+          "model_id",
+          "model_number",
+          "model"
+        ]
+      ]
+    ]
+  }
+}

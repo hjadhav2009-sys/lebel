@@ -1,0 +1,245 @@
+{
+  "bangle_bracelet_armlet": {
+    "title": "Bangle Bracelet Armlet",
+    "right": {
+      "title_x": 757,
+      "title_y": 392,
+      "text_x": 780,
+      "barcode_x": 802,
+      "barcode_y": 80,
+      "code_x": 729,
+      "code_y": 33
+    },
+    "left": {
+      "title_x": 336,
+      "title_y": 392,
+      "text_x": 359,
+      "barcode_x": 381,
+      "barcode_y": 80,
+      "code_x": 308,
+      "code_y": 33
+    },
+    "barcode": {
+      "type": "93",
+      "height": 42,
+      "readable": 0,
+      "rotation": 180,
+      "narrow": 2,
+      "wide": 4
+    },
+    "source_prn": "Bracelet.prn"
+  },
+  "car_hanging_ornament": {
+    "title": "Car_Hanging_Ornament",
+    "right": {
+      "title_x": 755,
+      "title_y": 393,
+      "text_x": 780,
+      "barcode_x": 802,
+      "barcode_y": 80,
+      "code_x": 736,
+      "code_y": 33
+    },
+    "left": {
+      "title_x": 334,
+      "title_y": 393,
+      "text_x": 359,
+      "barcode_x": 381,
+      "barcode_y": 80,
+      "code_x": 315,
+      "code_y": 33
+    },
+    "barcode": {
+      "type": "93",
+      "height": 42,
+      "readable": 0,
+      "rotation": 180,
+      "narrow": 2,
+      "wide": 4
+    },
+    "source_prn": "flipkart car hanger prn.prn"
+  },
+  "car_hanger": {
+    "alias_of": "car_hanging_ornament"
+  },
+  "earring": {
+    "title": "Earring",
+    "right": {
+      "title_x": 661,
+      "title_y": 392,
+      "text_x": 789,
+      "barcode_x": 802,
+      "barcode_y": 80,
+      "code_x": 740,
+      "code_y": 33
+    },
+    "left": {
+      "title_x": 240,
+      "title_y": 392,
+      "text_x": 368,
+      "barcode_x": 381,
+      "barcode_y": 80,
+      "code_x": 319,
+      "code_y": 33
+    },
+    "barcode": {
+      "type": "93",
+      "height": 42,
+      "readable": 0,
+      "rotation": 180,
+      "narrow": 2,
+      "wide": 4
+    },
+    "source_prn": "flipkart earring prn.prn"
+  },
+  "jewellery_set": {
+    "title": "Jewellery Set",
+    "right": {
+      "title_x": 695,
+      "title_y": 372,
+      "text_x": 802,
+      "barcode_x": 802,
+      "barcode_y": 74,
+      "code_x": 730,
+      "code_y": 26
+    },
+    "left": {
+      "title_x": 274,
+      "title_y": 372,
+      "text_x": 381,
+      "barcode_x": 381,
+      "barcode_y": 74,
+      "code_x": 309,
+      "code_y": 26
+    },
+    "barcode": {
+      "type": "93",
+      "height": 42,
+      "readable": 0,
+      "rotation": 180,
+      "narrow": 2,
+      "wide": 4
+    },
+    "source_prn": "flipkart jewellery set prn.prn"
+  },
+  "key_chain": {
+    "title": "key chain",
+    "right": {
+      "title_x": 674,
+      "title_y": 386,
+      "text_x": 780,
+      "barcode_x": 802,
+      "barcode_y": 80,
+      "code_x": 733,
+      "code_y": 33
+    },
+    "left": {
+      "title_x": 253,
+      "title_y": 386,
+      "text_x": 359,
+      "barcode_x": 381,
+      "barcode_y": 80,
+      "code_x": 312,
+      "code_y": 33
+    },
+    "barcode": {
+      "type": "93",
+      "height": 42,
+      "readable": 0,
+      "rotation": 180,
+      "narrow": 2,
+      "wide": 4
+    },
+    "source_prn": "flipkart keychain prn.prn"
+  },
+  "necklace_chain": {
+    "title": "Necklace Chain",
+    "right": {
+      "title_x": 708,
+      "title_y": 386,
+      "text_x": 780,
+      "barcode_x": 802,
+      "barcode_y": 80,
+      "code_x": 738,
+      "code_y": 33
+    },
+    "left": {
+      "title_x": 287,
+      "title_y": 386,
+      "text_x": 359,
+      "barcode_x": 381,
+      "barcode_y": 80,
+      "code_x": 317,
+      "code_y": 33
+    },
+    "barcode": {
+      "type": "93",
+      "height": 42,
+      "readable": 0,
+      "rotation": 180,
+      "narrow": 2,
+      "wide": 4
+    },
+    "source_prn": "flipkart necklace chain prn.prn"
+  },
+  "pendant_locket": {
+    "title": "Pendant Locket",
+    "right": {
+      "title_x": 707,
+      "title_y": 392,
+      "text_x": 780,
+      "barcode_x": 802,
+      "barcode_y": 74,
+      "code_x": 726,
+      "code_y": 26
+    },
+    "left": {
+      "title_x": 286,
+      "title_y": 392,
+      "text_x": 359,
+      "barcode_x": 381,
+      "barcode_y": 74,
+      "code_x": 305,
+      "code_y": 26
+    },
+    "barcode": {
+      "type": "93",
+      "height": 42,
+      "readable": 0,
+      "rotation": 180,
+      "narrow": 2,
+      "wide": 4
+    },
+    "source_prn": "flipkart pendant prn.prn"
+  },
+  "ring": {
+    "title": "Ring",
+    "right": {
+      "title_x": 647,
+      "title_y": 387,
+      "text_x": 789,
+      "barcode_x": 802,
+      "barcode_y": 74,
+      "code_x": 739,
+      "code_y": 26
+    },
+    "left": {
+      "title_x": 226,
+      "title_y": 387,
+      "text_x": 368,
+      "barcode_x": 381,
+      "barcode_y": 74,
+      "code_x": 318,
+      "code_y": 26
+    },
+    "barcode": {
+      "type": "93",
+      "height": 42,
+      "readable": 0,
+      "rotation": 180,
+      "narrow": 2,
+      "wide": 4
+    },
+    "source_prn": "flipkart ring prn.prn"
+  }
+}
