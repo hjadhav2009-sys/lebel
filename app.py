@@ -1515,26 +1515,26 @@ class App(tk.Tk):
         y0 = 18
         scale = size / 50.0
         c.create_rectangle(x0, y0, x0 + size, y0 + size, fill="white", outline="black", width=2)
-        heading_font = min(28, max(16, int(2.55 * scale)))
-        body_font = min(14, max(8, int(1.07 * scale)))
-        small_font = min(12, max(7, int(0.86 * scale)))
-        heading = row.get("main_heading", "")
+        heading_font = min(24, max(14, int(2.25 * scale)))
+        body_font = min(12, max(8, int(0.92 * scale)))
+        small_font = min(11, max(7, int(0.78 * scale)))
+        heading = amazon_label_renderer.amazon_display_heading(row.get("main_heading", ""))
         brand = row.get("brand", "")
         fnsku = row.get("fnsku", "")
-        c.create_text(x0 + size / 2, y0 + 1.3 * scale, text=heading[:34], anchor="n", font=("Arial", heading_font, "bold"))
-        y = y0 + 7.2 * scale
+        c.create_text(x0 + size / 2, y0 + 4.8 * scale, text=heading[:34], anchor="n", font=("Arial", heading_font, "bold"))
+        y = y0 + 8.7 * scale
         fields = [
             ("Brand", brand),
             ("SKU No", row.get("merchant_sku", "")),
             ("Net Quantity", "1 N"),
             ("MRP", amazon_label_renderer.amazon_mrp_for_print(row.get("mrp", ""))),
-            ("Generic Name", row.get("generic_name", "") or heading),
+            ("Generic Name", amazon_label_renderer.amazon_display_heading(row.get("generic_name", "")) or heading),
         ]
         for label, value in fields:
             c.create_text(x0 + 2.5 * scale, y, text=label, anchor="nw", font=("Arial", body_font))
-            c.create_text(x0 + 20.5 * scale, y, text=":", anchor="nw", font=("Arial", body_font))
-            c.create_text(x0 + 22.2 * scale, y, text=str(value)[:42], anchor="nw", font=("Arial", body_font))
-            y += 2.0 * scale
+            c.create_text(x0 + 16.0 * scale, y, text=":", anchor="nw", font=("Arial", body_font))
+            c.create_text(x0 + 17.2 * scale, y, text=str(value)[:42], anchor="nw", font=("Arial", body_font))
+            y += 1.75 * scale
         y += 0.6 * scale
         care = "Manufactured by / Marketed By / Customer care Details:"
         c.create_text(x0 + 2.5 * scale, y, text=care, anchor="nw", font=("Arial", small_font, "bold"))
@@ -1542,28 +1542,28 @@ class App(tk.Tk):
         y += 2.1 * scale
         address_lines = []
         for line in amazon_label_renderer.branch_address_lines(branch):
-            address_lines.extend(amazon_label_renderer.wrap_text(line, 44)[:2])
+            address_lines.extend(amazon_label_renderer.wrap_text(line, 42)[:2])
         address_lines.extend([
             f"Email Id:{branch.get('email', '')}",
             f"Contact:{branch.get('phone', '')}",
             f"Origin:{amazon_label_renderer.branch_origin_for_print(branch)}",
         ])
         for line in address_lines:
-            if y > y0 + 36.5 * scale:
+            if y > y0 + 35.2 * scale:
                 break
             c.create_text(x0 + 2.7 * scale, y, text=line, anchor="nw", font=("Arial", small_font))
-            y += 1.35 * scale
+            y += 1.25 * scale
         bx0 = x0 + 4.4 * scale
-        by0 = y0 + 38.7 * scale
-        bw = 41.5 * scale
-        bh = 6.2 * scale
+        by0 = y0 + 36.3 * scale
+        bw = 41.0 * scale
+        bh = 6.6 * scale
         seed = sum(ord(ch) for ch in fnsku)
         for i in range(135):
             if (i + seed) % 4 != 0:
                 xx = bx0 + i * bw / 135
                 c.create_line(xx, by0, xx, by0 + bh, width=1)
-        c.create_text(x0 + size / 2, y0 + 45.5 * scale, text=fnsku, anchor="n", font=("Arial", small_font))
-        c.create_text(x0 + size / 2, y0 + 48.0 * scale, text=amazon_label_renderer.amazon_title_for_print(row.get("title", ""))[:58], anchor="n", font=("Arial", max(7, small_font - 1)))
+        c.create_text(x0 + size / 2, y0 + 44.2 * scale, text=fnsku, anchor="n", font=("Arial", small_font))
+        c.create_text(x0 + size / 2, y0 + 47.3 * scale, text=amazon_label_renderer.amazon_title_for_print(row.get("title", ""))[:58], anchor="n", font=("Arial", max(7, small_font - 1)))
 
     def amazon_blocking_items(self):
         items = []

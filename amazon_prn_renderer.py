@@ -1,4 +1,4 @@
-from amazon_label_renderer import amazon_mrp_for_print, amazon_title_for_print, branch_origin_for_print, wrap_text
+from amazon_label_renderer import amazon_display_heading, amazon_mrp_for_print, amazon_title_for_print, branch_origin_for_print, wrap_text
 from amazon_rules import clean_text
 from amazon_validation import parse_positive_int
 
@@ -37,14 +37,14 @@ def split_address(branch):
         for line in wrap_text(raw, 34):
             if line:
                 lines.append(line)
-    return lines[:3]
+    return lines[:4]
 
 
 def label_payload(row, branch):
-    heading = clean_text(row.get("main_heading", ""))
+    heading = amazon_display_heading(row.get("main_heading", ""))
     brand = clean_text(row.get("brand", ""))
     sku = clean_text(row.get("merchant_sku", ""))
-    generic = clean_text(row.get("generic_name", "")) or heading
+    generic = amazon_display_heading(row.get("generic_name", "")) or heading
     return {
         "heading": heading,
         "brand": brand,
@@ -62,9 +62,9 @@ def label_payload(row, branch):
 
 
 def add_field(lines, x, y, label, value):
-    lines.append(text_cmd(x, y, "0", 180, 5, 5, label))
-    lines.append(text_cmd(x - 105, y, "0", 180, 5, 5, ":"))
-    lines.append(text_cmd(x - 121, y, "0", 180, 5, 5, value))
+    lines.append(text_cmd(x, y, "0", 180, 4, 4, label))
+    lines.append(text_cmd(x - 110, y, "0", 180, 4, 4, ":"))
+    lines.append(text_cmd(x - 124, y, "0", 180, 4, 4, value))
 
 
 def add_label(lines, row, branch, side):
@@ -74,27 +74,27 @@ def add_label(lines, row, branch, side):
     else:
         title_x, field_x, barcode_x, barcode_text_x, bottom_x = 694, 778, 761, 699, 778
 
-    lines.append(text_cmd(title_x, 374, "0", 180, 13, 9, f"{payload['heading']} "))
-    add_field(lines, field_x, 334, "Brand", payload["brand"])
-    add_field(lines, field_x, 309, "SKU No", payload["sku"])
-    add_field(lines, field_x, 284, "Net Quantity", payload["qty"])
-    add_field(lines, field_x, 259, "MRP", payload["mrp"])
-    add_field(lines, field_x, 234, "Generic Name", payload["generic"])
+    lines.append(text_cmd(title_x, 360, "0", 180, 10, 7, f"{payload['heading']} "))
+    add_field(lines, field_x, 326, "Brand", payload["brand"])
+    add_field(lines, field_x, 310, "SKU No", payload["sku"])
+    add_field(lines, field_x, 294, "Net Quantity", payload["qty"])
+    add_field(lines, field_x, 278, "MRP", payload["mrp"])
+    add_field(lines, field_x, 262, "Generic Name", payload["generic"])
 
-    lines.append(text_cmd(field_x, 207, "0", 180, 4, 5, "Manufactured by / Marketed By / Customer care Details:"))
-    y = 186
+    lines.append(text_cmd(field_x, 238, "0", 180, 3, 4, "Manufactured by / Marketed By / Customer care Details:"))
+    y = 219
     for addr in payload["address"]:
-        lines.append(text_cmd(field_x, y, "0", 180, 4, 5, addr))
-        y -= 17
-    lines.append(text_cmd(field_x, y, "0", 180, 4, 5, payload["email"]))
-    y -= 17
-    lines.append(text_cmd(field_x, y, "0", 180, 4, 5, payload["contact"]))
-    y -= 17
-    lines.append(text_cmd(field_x, y, "0", 180, 4, 5, payload["origin"]))
+        lines.append(text_cmd(field_x, y, "0", 180, 3, 4, addr))
+        y -= 14
+    lines.append(text_cmd(field_x, y, "0", 180, 3, 4, payload["email"]))
+    y -= 14
+    lines.append(text_cmd(field_x, y, "0", 180, 3, 4, payload["contact"]))
+    y -= 14
+    lines.append(text_cmd(field_x, y, "0", 180, 3, 4, payload["origin"]))
 
-    lines.append(barcode_cmd(barcode_x, 109, payload["fnsku"]))
-    lines.append(text_cmd(barcode_text_x, 63, "ROMAN.TTF", 180, 1, 8, payload["fnsku"]))
-    lines.append(text_cmd(bottom_x, 37, "0", 180, 5, 6, payload["title"]))
+    lines.append(barcode_cmd(barcode_x, 89, payload["fnsku"]))
+    lines.append(text_cmd(barcode_text_x, 50, "ROMAN.TTF", 180, 1, 8, payload["fnsku"]))
+    lines.append(text_cmd(bottom_x, 26, "0", 180, 4, 5, payload["title"]))
 
 
 def expanded_rows(rows):

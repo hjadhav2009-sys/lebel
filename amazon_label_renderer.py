@@ -41,6 +41,21 @@ def amazon_title_for_print(title):
     return f"{clean_text(title)[:50].strip()} New".strip()
 
 
+def amazon_display_heading(category):
+    category = clean_text(category)
+    names = {
+        "Pendant Necklace": "Pendant",
+        "Keychain": "Keychain",
+        "Bracelet": "Bracelet",
+        "Ring": "Ring",
+        "Earring": "Earring",
+        "Brooch": "Brooch",
+        "Car Hanger": "Car Hanger",
+        "Dashbord": "Dashbord",
+    }
+    return names.get(category, category)
+
+
 def amazon_mrp_for_print(value):
     mrp = normalize_mrp(value)
     return f"Rs.{mrp} (inclusive of all Taxes)" if mrp else ""
@@ -75,30 +90,34 @@ def draw_wrapped(c, x, yy, max_y_bottom, text, font_name, font_size, max_chars, 
     return yy
 
 
-def draw_label_value(c, x, y, label, value, label_w_mm=21.5, font_size=4.65):
-    c.setFont("Helvetica", font_size)
+def draw_label_value(c, x, y, label, value, colon_x, value_x, font_size=3.9):
+    c.setFont("Helvetica-Bold", font_size)
     c.drawString(x, y, label)
-    c.drawString(x + label_w_mm * mm, y, ":")
-    c.drawString(x + (label_w_mm + 1.7) * mm, y, clean_text(value))
+    c.setFont("Helvetica", font_size)
+    c.drawString(colon_x, y, ":")
+    c.drawString(value_x, y, clean_text(value))
 
 
 def draw_amazon_pdf_label(c, x, y, w, h, row, branch):
     c.rect(x, y, w, h, stroke=1, fill=0)
 
-    heading = clean_text(row.get("main_heading", ""))
+    heading = amazon_display_heading(row.get("main_heading", ""))
     brand = clean_text(row.get("brand", ""))
     sku = clean_text(row.get("merchant_sku", ""))
     fnsku = clean_text(row.get("fnsku", ""))
-    generic = clean_text(row.get("generic_name", "")) or heading
+    generic = amazon_display_heading(row.get("generic_name", "")) or heading
     title = amazon_title_for_print(row.get("title", ""))
     mrp_line = amazon_mrp_for_print(row.get("mrp", ""))
 
-    top_y = y + h - 3.4 * mm
-    c.setFont("Helvetica-Bold", 8.8)
+    top_y = y + 45.0 * mm
+    c.setFont("Helvetica-Bold", 7.2)
     c.drawCentredString(x + w / 2, top_y, heading[:26])
 
-    yy = y + h - 7.35 * mm
-    left_x = x + 2.25 * mm
+    yy = y + 41.0 * mm
+    row_gap = 1.75 * mm
+    left_x = x + 2.2 * mm
+    colon_x = x + 16.0 * mm
+    value_x = x + 17.2 * mm
     value_rows = [
         ("Brand", brand),
         ("SKU No", sku),
@@ -107,39 +126,43 @@ def draw_amazon_pdf_label(c, x, y, w, h, row, branch):
         ("Generic Name", generic),
     ]
     for label, value in value_rows:
-        draw_label_value(c, left_x, yy, label, value, label_w_mm=19.8, font_size=4.7)
-        yy -= 2.0 * mm
+        draw_label_value(c, left_x, yy, label, value, colon_x, value_x, font_size=3.9)
+        yy -= row_gap
 
-    heading_line_y = yy - 0.4 * mm
-    c.setFont("Helvetica-Bold", 4.15)
+    heading_line_y = yy - 1.0 * mm
+    c.setFont("Helvetica-Bold", 3.8)
     care_text = "Manufactured by / Marketed By / Customer care Details:"
     c.drawString(left_x, heading_line_y, care_text)
     c.setLineWidth(0.3)
-    c.line(left_x, heading_line_y - 0.45 * mm, x + w - 2.0 * mm, heading_line_y - 0.45 * mm)
+    c.line(x + 1.8 * mm, heading_line_y - 0.45 * mm, x + w - 1.8 * mm, heading_line_y - 0.45 * mm)
 
-    address_y = heading_line_y - 2.0 * mm
-    c.setFont("Helvetica", 3.85)
+    address_y = heading_line_y - 2.1 * mm
+    c.setFont("Helvetica", 3.55)
     for line in branch_address_lines(branch):
-        for part in wrap_text(line, 44)[:2]:
-            if address_y < y + 15.6 * mm:
+        for part in wrap_text(line, 42)[:2]:
+            if address_y < y + 14.0 * mm:
                 break
             c.drawString(left_x, address_y, part)
-            address_y -= 1.55 * mm
+            address_y -= 1.45 * mm
 
-    c.drawString(left_x, address_y, f"Email Id:{clean_text(branch.get('email', ''))}")
-    address_y -= 1.55 * mm
-    c.drawString(left_x, address_y, f"Contact:{clean_text(branch.get('phone', ''))}")
-    address_y -= 1.55 * mm
-    c.drawString(left_x, address_y, f"Origin:{branch_origin_for_print(branch)}")
+    for line in [
+        f"Email Id:{clean_text(branch.get('email', ''))}",
+        f"Contact:{clean_text(branch.get('phone', ''))}",
+        f"Origin:{branch_origin_for_print(branch)}",
+    ]:
+        if address_y < y + 14.0 * mm:
+            break
+        c.drawString(left_x, address_y, line)
+        address_y -= 1.45 * mm
 
-    barcode_y = y + 5.25 * mm
-    barcode_h = 6.25 * mm
-    barcode_text_y = y + 3.35 * mm
-    title_y = y + 1.25 * mm
+    barcode_y = y + 6.8 * mm
+    barcode_h = 6.6 * mm
+    barcode_text_y = y + 4.0 * mm
+    title_y = y + 1.4 * mm
 
     if code128 is not None and fnsku:
         try:
-            target_w = w - 8.0 * mm
+            target_w = w - 12.0 * mm
             bc = code128.Code128(fnsku, barHeight=barcode_h, barWidth=0.22 * mm, humanReadable=False)
             if bc.width > target_w:
                 bw = bc.barWidth * (target_w / bc.width)
@@ -149,9 +172,9 @@ def draw_amazon_pdf_label(c, x, y, w, h, row, branch):
             c.setFont("Helvetica", 4)
             c.drawCentredString(x + w / 2, y + 5.0 * mm, "BARCODE ERROR")
 
-    c.setFont("Helvetica", 4.5)
+    c.setFont("Helvetica", 4.4)
     c.drawCentredString(x + w / 2, barcode_text_y, fnsku)
-    c.setFont("Helvetica", 3.75)
+    c.setFont("Helvetica", 3.65)
     c.drawCentredString(x + w / 2, title_y, title[:58])
 
 
