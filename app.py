@@ -31,7 +31,7 @@ except Exception:
     mm = 2.834645669291339
     code128 = None
 
-APP_VERSION = "V15 Advanced"
+APP_VERSION = "V16 Advanced"
 APP_NAME = f"M Men Style - Marketplace Label Generator {APP_VERSION}"
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
@@ -436,27 +436,45 @@ class App(tk.Tk):
 
     def build_amazon_tab(self):
         toolbar = ttk.Frame(self.tab_amazon)
-        toolbar.pack(fill="x", padx=4, pady=4)
-        ttk.Button(toolbar, text="Upload Weekly Master Listing", command=self.upload_amazon_master_file).pack(side="left", padx=4)
-        ttk.Button(toolbar, text="Upload Amazon Consignment File", command=self.upload_amazon_consignment_file).pack(side="left", padx=4)
-        ttk.Button(toolbar, text="Clear Amazon Consignment", command=self.clear_amazon_consignment).pack(side="left", padx=4)
-        ttk.Button(toolbar, text="Clear Master Listing", command=self.clear_amazon_master).pack(side="left", padx=4)
-        ttk.Button(toolbar, text="Preview Selected", command=self.preview_selected_amazon).pack(side="left", padx=12)
-        ttk.Button(toolbar, text="Validate Amazon", command=self.validate_amazon_clicked).pack(side="left", padx=4)
-        ttk.Button(toolbar, text="Fix Blocking Rows", command=self.fix_amazon_blockers_dialog).pack(side="left", padx=4)
-        self.amazon_generate_btn = ttk.Button(toolbar, text="Generate Amazon PDF", command=self.generate_amazon_pdf_clicked)
-        self.amazon_generate_btn.pack(side="left", padx=4)
-        self.amazon_prn_btn = ttk.Button(toolbar, text="Generate Amazon PRN", command=self.generate_amazon_prn_clicked)
-        self.amazon_prn_btn.pack(side="left", padx=4)
-        ttk.Button(toolbar, text="Open Last PDF", command=self.open_last_pdf).pack(side="left", padx=4)
-        ttk.Button(toolbar, text="Open Last PRN", command=self.open_last_prn).pack(side="left", padx=4)
-        ttk.Button(toolbar, text="Print Last PDF", command=self.print_last_pdf).pack(side="left", padx=4)
-        ttk.Button(toolbar, text="Print Last PRN Direct", command=self.print_last_prn_direct).pack(side="left", padx=4)
-        ttk.Label(toolbar, text="Branch:").pack(side="left", padx=(18, 4))
+        toolbar.pack(fill="x", padx=6, pady=4)
+
+        def step_row(label):
+            row = ttk.Frame(toolbar)
+            row.pack(fill="x", pady=2)
+            ttk.Label(row, text=label, width=12).pack(side="left", padx=(0, 4))
+            return row
+
+        def step_button(parent, text, command, width=24):
+            btn = ttk.Button(parent, text=text, command=command, width=width)
+            btn.pack(side="left", padx=3, pady=1)
+            return btn
+
+        files_row = step_row("1) Files:")
+        step_button(files_row, "Upload Weekly Master Listing", self.upload_amazon_master_file, width=26)
+        step_button(files_row, "Upload Amazon Consignment File", self.upload_amazon_consignment_file, width=28)
+        step_button(files_row, "Clear Amazon Consignment", self.clear_amazon_consignment, width=25)
+        step_button(files_row, "Clear Master Listing", self.clear_amazon_master, width=22)
+
+        check_row = step_row("2) Check:")
+        step_button(check_row, "Preview Selected", self.preview_selected_amazon, width=22)
+        step_button(check_row, "Validate Amazon", self.validate_amazon_clicked, width=22)
+        step_button(check_row, "Fix Blocking Rows", self.fix_amazon_blockers_dialog, width=22)
+
+        output_row = step_row("3) Output:")
+        self.amazon_generate_btn = step_button(output_row, "Generate Amazon PDF", self.generate_amazon_pdf_clicked, width=22)
+        self.amazon_prn_btn = step_button(output_row, "Generate Amazon PRN", self.generate_amazon_prn_clicked, width=22)
+        self.amazon_prn_print_btn = step_button(output_row, "Generate PRN & Print", self.generate_amazon_prn_and_print_clicked, width=22)
+        step_button(output_row, "Open Last PDF", self.open_last_pdf, width=18)
+        step_button(output_row, "Open Last PRN", self.open_last_prn, width=18)
+        step_button(output_row, "Print Last PDF", self.print_last_pdf, width=18)
+        step_button(output_row, "Print Last PRN Direct", self.print_last_prn_direct, width=22)
+
+        branch_row = step_row("4) Branch:")
         self.amazon_branch_var = tk.StringVar(value=self.amazon_mapping.get("selected_branch", ""))
-        self.amazon_branch_combo = ttk.Combobox(toolbar, textvariable=self.amazon_branch_var, state="readonly", width=24)
-        self.amazon_branch_combo.pack(side="left")
+        self.amazon_branch_combo = ttk.Combobox(branch_row, textvariable=self.amazon_branch_var, state="readonly", width=28)
+        self.amazon_branch_combo.pack(side="left", padx=3)
         self.amazon_branch_combo.bind("<<ComboboxSelected>>", lambda e: self.save_amazon_selected_branch())
+        ttk.Label(branch_row, text="Amazon Output Layout: BarTender 2UP 101.5x50 PRN style").pack(side="left", padx=12)
 
         status_box = ttk.Frame(self.tab_amazon)
         status_box.pack(fill="x", padx=8, pady=(0, 4))
@@ -464,7 +482,6 @@ class App(tk.Tk):
         self.amazon_consignment_status_var = tk.StringVar(value="Consignment File: not loaded")
         ttk.Label(status_box, textvariable=self.amazon_master_status_var).pack(anchor="w")
         ttk.Label(status_box, textvariable=self.amazon_consignment_status_var).pack(anchor="w")
-        ttk.Label(status_box, text="Amazon Output Layout: BarTender 2UP 101.5x50 PRN style").pack(anchor="w")
 
         body = ttk.Panedwindow(self.tab_amazon, orient="horizontal")
         body.pack(fill="both", expand=True, padx=4, pady=4)
@@ -1428,6 +1445,9 @@ class App(tk.Tk):
         if idx is None:
             return
         self.amazon_qty_var.set(str(self.amazon_rows[idx].get("print_qty", "1")))
+        if hasattr(self, "amazon_preview"):
+            self.amazon_preview.delete("all")
+            self.amazon_preview.create_text(30, 30, text="Click Preview Selected", anchor="nw", fill="#777777", font=("Arial", 16, "bold"))
 
     def apply_amazon_row_qty(self):
         idx = self.selected_amazon_row_index()
@@ -1747,6 +1767,12 @@ class App(tk.Tk):
         threading.Thread(target=worker, daemon=True).start()
 
     def generate_amazon_prn_clicked(self):
+        self.start_amazon_prn_generation(print_after=False)
+
+    def generate_amazon_prn_and_print_clicked(self):
+        self.start_amazon_prn_generation(print_after=True)
+
+    def start_amazon_prn_generation(self, print_after=False):
         total = self.prepare_amazon_generation("PRN")
         if total is None:
             return
@@ -1758,6 +1784,8 @@ class App(tk.Tk):
         branch = copy.deepcopy(self.current_amazon_branch())
         try:
             self.amazon_prn_btn.config(state="disabled")
+            if hasattr(self, "amazon_prn_print_btn"):
+                self.amazon_prn_print_btn.config(state="disabled")
         except Exception:
             pass
         self.status_var.set(f"Generating {total} Amazon PRN labels in background... app will stay usable.")
@@ -1770,7 +1798,7 @@ class App(tk.Tk):
             try:
                 amazon_validation.write_report_csv(report_out, rows_snapshot)
                 amazon_prn_renderer.generate_amazon_prn(out, rows_snapshot, branch, progress_callback=progress)
-                self.after(0, lambda: self.on_amazon_prn_done(out, report_out, total))
+                self.after(0, lambda: self.on_amazon_prn_done(out, report_out, total, print_after=print_after))
             except Exception as e:
                 err = str(e)
                 log(traceback.format_exc())
@@ -1796,19 +1824,26 @@ class App(tk.Tk):
         messagebox.showerror("Amazon PDF error", err)
         self.status_var.set("Amazon PDF generation failed. Check logs/debug_log.txt")
 
-    def on_amazon_prn_done(self, out, report_out, total):
+    def on_amazon_prn_done(self, out, report_out, total, print_after=False):
         self.last_prn = out
         self.amazon_last_report = report_out
         try:
             self.amazon_prn_btn.config(state="normal")
+            if hasattr(self, "amazon_prn_print_btn"):
+                self.amazon_prn_print_btn.config(state="normal")
         except Exception:
             pass
         self.status_var.set(f"Amazon PRN generated: {total} labels -> {out}")
-        messagebox.showinfo("Amazon PRN generated", f"Amazon PRN generated successfully.\n\nLabels: {total}\nPRN:\n{out}\n\nReport CSV:\n{report_out}")
+        if print_after:
+            self.print_last_prn_direct()
+        else:
+            messagebox.showinfo("Amazon PRN generated", f"Amazon PRN generated successfully.\n\nLabels: {total}\nPRN:\n{out}\n\nReport CSV:\n{report_out}")
 
     def on_amazon_prn_error(self, err):
         try:
             self.amazon_prn_btn.config(state="normal")
+            if hasattr(self, "amazon_prn_print_btn"):
+                self.amazon_prn_print_btn.config(state="normal")
         except Exception:
             pass
         messagebox.showerror("Amazon PRN error", err)
