@@ -100,6 +100,7 @@ class AmazonLabelFrame(ttk.Frame):
         self.consignment_status_var = tk.StringVar(value="Consignment File: not loaded")
         self.branch_var = tk.StringVar(value=self.mapping.get("selected_branch", ""))
         self.layout_var = tk.StringVar(value=amazon_label_renderer.normalize_pdf_layout(self.mapping.get("pdf_layout", amazon_label_renderer.PDF_LAYOUT_BARTENDER)))
+        self.prn_mode_var = tk.StringVar(value=amazon_prn_renderer.normalize_prn_mode(self.mapping.get("prn_mode", amazon_prn_renderer.PRN_MODE_TEMPLATE)))
         self.qty_var = tk.StringVar(value="1")
 
         self.build_ui()
@@ -166,6 +167,16 @@ class AmazonLabelFrame(ttk.Frame):
         )
         self.layout_combo.pack(side="left", padx=3)
         self.layout_combo.bind("<<ComboboxSelected>>", self.on_layout_selected)
+        ttk.Label(branch_row, text="PRN Mode:").pack(side="left", padx=(14, 4))
+        self.prn_mode_combo = ttk.Combobox(
+            branch_row,
+            textvariable=self.prn_mode_var,
+            state="readonly",
+            width=24,
+            values=amazon_prn_renderer.PRN_MODE_VALUES,
+        )
+        self.prn_mode_combo.pack(side="left", padx=3)
+        self.prn_mode_combo.bind("<<ComboboxSelected>>", self.on_prn_mode_selected)
 
         status_box = ttk.Frame(self)
         status_box.pack(fill="x", padx=8, pady=(0, 4))
@@ -282,6 +293,12 @@ class AmazonLabelFrame(ttk.Frame):
             self.layout_var.set(layout)
         return layout
 
+    def selected_prn_mode(self):
+        mode = amazon_prn_renderer.normalize_prn_mode(self.prn_mode_var.get())
+        if self.prn_mode_var.get() != mode:
+            self.prn_mode_var.set(mode)
+        return mode
+
     def on_layout_selected(self, _event=None):
         self.mapping["pdf_layout"] = self.selected_pdf_layout()
         try:
@@ -290,6 +307,14 @@ class AmazonLabelFrame(ttk.Frame):
             log_error(traceback.format_exc())
         self.preview_selected(silent=True)
         self.set_status(f"Amazon PDF layout set to: {self.layout_var.get()}")
+
+    def on_prn_mode_selected(self, _event=None):
+        self.mapping["prn_mode"] = self.selected_prn_mode()
+        try:
+            amazon_rules.save_mapping_settings(self.mapping)
+        except Exception:
+            log_error(traceback.format_exc())
+        self.set_status(f"Amazon PRN mode set to: {self.prn_mode_var.get()}")
 
     # ---------------- Background helpers ----------------
     def set_status(self, text):
@@ -779,6 +804,13 @@ class AmazonLabelFrame(ttk.Frame):
         if not prepared:
             return
         total, rows_snapshot, branch = prepared
+        prn_mode = self.selected_prn_mode()
+        template_path = amazon_prn_renderer.default_amazon_template_path()
+        if prn_mode == amazon_prn_renderer.PRN_MODE_TEMPLATE and not template_path.exists():
+            msg = amazon_prn_renderer.AMAZON_TEMPLATE_MISSING_MESSAGE
+            self.set_status(msg)
+            messagebox.showerror("Amazon template missing", msg)
+            return
         stamp = time.strftime("%Y%m%d_%H%M%S")
         out = output_dir() / f"amazon_labels_{stamp}.prn"
         report_out = output_dir() / f"amazon_label_report_{stamp}.csv"
@@ -788,7 +820,16 @@ class AmazonLabelFrame(ttk.Frame):
 
         def worker():
             amazon_validation.write_report_csv(report_out, rows_snapshot)
-            generated = amazon_prn_renderer.generate_amazon_prn(out, rows_snapshot, branch, progress_callback=progress)
+            if prn_mode == amazon_prn_renderer.PRN_MODE_TEMPLATE:
+                generated = amazon_prn_renderer.generate_amazon_prn_from_template(
+                    out,
+                    rows_snapshot,
+                    branch,
+                    template_path,
+                    progress_callback=progress,
+                )
+            else:
+                generated = amazon_prn_renderer.generate_amazon_prn(out, rows_snapshot, branch, progress_callback=progress)
             return generated, str(out), str(report_out)
 
         def done(result):
@@ -796,11 +837,11 @@ class AmazonLabelFrame(ttk.Frame):
             self.last_prn = prn_path
             self.last_report = report_path
             self.record_amazon_output("PRN", prn_path, report_path, generated)
-            self.set_status(f"Amazon PRN generated: {generated} labels -> {prn_path}")
+            self.set_status(f"Amazon PRN generated ({prn_mode}): {generated} labels -> {prn_path}")
             if print_after:
                 self.print_last_prn_direct()
             else:
-                messagebox.showinfo("Amazon PRN generated", f"Amazon PRN generated successfully.\n\nLabels: {generated}\nPRN:\n{prn_path}\n\nReport CSV:\n{report_path}")
+                messagebox.showinfo("Amazon PRN generated", f"Amazon PRN generated successfully.\n\nMode: {prn_mode}\nLabels: {generated}\nPRN:\n{prn_path}\n\nReport CSV:\n{report_path}")
 
         buttons = [self.prn_btn]
         if hasattr(self, "prn_print_btn"):

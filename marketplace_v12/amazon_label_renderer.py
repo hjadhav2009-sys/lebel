@@ -30,29 +30,29 @@ GAP_X_MM = 1.9
 LAYOUT_POSITIONS = {
     "margin_left_mm": 2.2,
     "margin_right_mm": 1.8,
-    "heading_top_mm": 4.1,
-    "heading_font": 7.1,
+    "heading_top_mm": 3.8,
+    "heading_font": 7.6,
     "field_top_mm": 8.1,
-    "field_gap_mm": 1.95,
-    "field_label_font": 3.85,
-    "field_value_font": 3.75,
+    "field_gap_mm": 2.0,
+    "field_label_font": 4.1,
+    "field_value_font": 4.0,
     "field_label_x_mm": 2.2,
     "field_colon_x_mm": 16.0,
     "field_value_x_mm": 17.2,
     "care_top_mm": 19.2,
-    "care_font": 3.65,
+    "care_font": 3.8,
     "care_underline_offset_mm": 0.42,
     "address_top_mm": 21.15,
-    "address_gap_mm": 1.5,
-    "address_font": 3.45,
+    "address_gap_mm": 1.55,
+    "address_font": 3.6,
     "address_stop_before_barcode_mm": 1.1,
-    "barcode_bottom_mm": 7.6,
+    "barcode_bottom_mm": 8.8,
     "barcode_height_mm": 6.7,
     "barcode_margin_x_mm": 6.0,
-    "barcode_text_bottom_mm": 4.35,
-    "barcode_text_font": 4.25,
-    "title_bottom_mm": 1.35,
-    "title_font": 3.55,
+    "barcode_text_bottom_mm": 5.9,
+    "barcode_text_font": 4.35,
+    "title_bottom_mm": 2.8,
+    "title_font": 3.75,
     # TSPL TEXT with rotation 180 uses a different anchor than ReportLab/Tk.
     # Keep these printer anchors in the same shared map so PRN does not carry
     # its own layout constants or field order.
@@ -113,7 +113,7 @@ def fit_text(text, max_chars):
 
 def amazon_title_for_print(title):
     base = clean_text(title)[:50].strip()
-    return f"{base} New".strip()
+    return f"{base}...New" if base else "...New"
 
 
 def amazon_display_heading(category):
@@ -167,7 +167,7 @@ def build_address_lines(branch):
 
 def build_amazon_label_payload(row, branch):
     heading = amazon_display_heading(row.get("main_heading", ""))
-    generic = amazon_display_heading(row.get("generic_name", "")) or heading
+    generic = heading
     return {
         "heading": fit_text(heading, 28),
         "field_rows": [

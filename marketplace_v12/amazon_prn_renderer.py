@@ -1,3 +1,6 @@
+import sys
+from pathlib import Path
+
 try:
     from .amazon_label_renderer import (
         GAP_X_MM,
@@ -24,6 +27,18 @@ except ImportError:
     from amazon_validation import parse_positive_int
 
 
+BASE_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
+AMAZON_TEMPLATE_DIR = BASE_DIR / "reference_templates" / "amazon"
+AMAZON_TEMPLATE_PATH = AMAZON_TEMPLATE_DIR / "amazon_template.prn"
+AMAZON_TEMPLATE_MISSING_MESSAGE = (
+    "Amazon BarTender template PRN missing. Place amazon_template.prn in "
+    "marketplace_v12/reference_templates/amazon/"
+)
+
+PRN_MODE_TEMPLATE = "template_barcode_bitmap"
+PRN_MODE_DYNAMIC = "dynamic_tspl"
+PRN_MODE_VALUES = [PRN_MODE_TEMPLATE, PRN_MODE_DYNAMIC]
+
 HEADER = [
     "SIZE 101.5 mm, 50 mm",
     "GAP 3 mm, 0 mm",
@@ -41,6 +56,37 @@ HEADER = [
 
 DOTS_PER_MM = 8.0
 BARCODE_HEIGHT_DOTS = 42
+
+BARTENDER_COORDS = {
+    "left": {
+        "heading": (278, 385),
+        "field": (355, 354),
+        "barcode": (361, 122),
+        "barcode_text": (300, 76),
+        "title": (374, 48),
+    },
+    "right": {
+        "heading": (689, 385),
+        "field": (766, 354),
+        "barcode": (772, 122),
+        "barcode_text": (711, 76),
+        "title": (785, 48),
+    },
+}
+FIELD_ROW_GAP_DOTS = 16
+CARE_HEADING_Y = 264
+ADDRESS_START_Y = 244
+ADDRESS_GAP_DOTS = 14
+FIELD_LABEL_WIDTH = 16
+MAX_ADDRESS_LINES = 7
+
+
+def default_amazon_template_path():
+    return AMAZON_TEMPLATE_PATH
+
+
+def normalize_prn_mode(mode):
+    return PRN_MODE_DYNAMIC if mode == PRN_MODE_DYNAMIC else PRN_MODE_TEMPLATE
 
 
 def dots(mm_value):
@@ -80,6 +126,10 @@ def text_fit(value, max_chars):
     return value[: max_chars - 1].rstrip() + "."
 
 
+def field_line(label, value):
+    return text_fit(f"{label:<{FIELD_LABEL_WIDTH}}: {clean_text(value)}", 62)
+
+
 def add_field(lines, side, y, label, value, positions):
     field_x = x_from_left_mm(side, positions["prn_field_label_anchor_x_mm"])
     colon_x = x_from_left_mm(side, positions["prn_field_colon_anchor_x_mm"])
@@ -90,45 +140,76 @@ def add_field(lines, side, y, label, value, positions):
 
 
 def add_label(lines, row, branch, side):
-    positions = get_amazon_layout_positions()
     payload = build_amazon_label_payload(row, branch)
+    coords = BARTENDER_COORDS[side]
+    heading_x, heading_y = coords["heading"]
+    field_x, field_y = coords["field"]
+    barcode_x, barcode_y = coords["barcode"]
+    barcode_text_x, barcode_text_y = coords["barcode_text"]
+    title_x, title_y = coords["title"]
 
-    heading_x = x_from_left_mm(side, positions["prn_heading_anchor_x_mm"])
-    field_x = x_from_left_mm(side, positions["prn_body_text_anchor_x_mm"])
-    barcode_x = x_from_left_mm(side, positions["barcode_margin_x_mm"])
-    barcode_text_x = x_from_left_mm(side, positions["prn_barcode_text_anchor_x_mm"])
-    title_x = x_from_left_mm(side, positions["prn_title_anchor_x_mm"])
-
-    lines.append(text_cmd(heading_x, y_from_top(positions["heading_top_mm"], positions["prn_heading_y_adjust_dots"]), "0", 180, 13, 9, payload["heading"]))
+    lines.append(text_cmd(heading_x, heading_y, "0", 180, 12, 10, payload["heading"]))
 
     for index, (label, value) in enumerate(payload["field_rows"]):
-        y = y_from_top(positions["field_top_mm"] + index * positions["field_gap_mm"], positions["prn_field_y_adjust_dots"])
-        add_field(lines, side, y, label, value, positions)
+        y = field_y - index * FIELD_ROW_GAP_DOTS
+        lines.append(text_cmd(field_x, y, "ROMAN.TTF", 180, 1, 5, field_line(label, value)))
 
-    lines.append(
-        text_cmd(
-            field_x,
-            y_from_top(positions["care_top_mm"], positions["prn_care_y_adjust_dots"]),
-            "0",
-            180,
-            3,
-            4,
-            payload["care_heading"],
-        )
-    )
+    lines.append(text_cmd(field_x, CARE_HEADING_Y, "0", 180, 3, 4, payload["care_heading"]))
+    for index, line in enumerate(payload["address_lines"][:MAX_ADDRESS_LINES]):
+        lines.append(text_cmd(field_x, ADDRESS_START_Y - index * ADDRESS_GAP_DOTS, "0", 180, 3, 4, text_fit(line, 50)))
 
-    barcode_top_mm = LABEL_HEIGHT_MM - positions["barcode_bottom_mm"] - positions["barcode_height_mm"]
-    max_address_top = barcode_top_mm - positions["address_stop_before_barcode_mm"]
-    for index, line in enumerate(payload["address_lines"]):
-        top_mm = positions["address_top_mm"] + index * positions["address_gap_mm"]
-        if top_mm > max_address_top:
-            break
-        lines.append(text_cmd(field_x, y_from_top(top_mm, positions["prn_address_y_adjust_dots"]), "0", 180, 3, 4, text_fit(line, 48)))
-
-    barcode_y = dots(positions["barcode_bottom_mm"]) + BARCODE_HEIGHT_DOTS
     lines.append(barcode_cmd(barcode_x, barcode_y, payload["fnsku"]))
-    lines.append(text_cmd(barcode_text_x, dots(positions["barcode_text_bottom_mm"]) + positions["prn_barcode_text_y_adjust_dots"], "ROMAN.TTF", 180, 1, 8, payload["fnsku"]))
-    lines.append(text_cmd(title_x, dots(positions["title_bottom_mm"]) + positions["prn_title_y_adjust_dots"], "0", 180, 5, 6, payload["title"]))
+    lines.append(text_cmd(barcode_text_x, barcode_text_y, "ROMAN.TTF", 180, 1, 8, payload["fnsku"]))
+    lines.append(text_cmd(title_x, title_y, "0", 180, 5, 6, payload["title"]))
+
+
+def _split_prn_bytes(raw):
+    return raw.replace(b"\r\n", b"\n").replace(b"\r", b"\n").split(b"\n")
+
+
+def _is_dynamic_template_line(line):
+    upper = line.lstrip().upper()
+    return upper.startswith(b"TEXT ") or upper.startswith(b"BARCODE ") or upper.startswith(b"PRINT")
+
+
+def _read_template_static_lines(template_path):
+    path = Path(template_path)
+    if not path.exists():
+        raise RuntimeError(AMAZON_TEMPLATE_MISSING_MESSAGE)
+
+    raw = path.read_bytes()
+    if not raw.strip():
+        raise RuntimeError(AMAZON_TEMPLATE_MISSING_MESSAGE)
+
+    static_lines = []
+    has_bitmap = False
+    has_cls = False
+    has_codepage = False
+    for line in _split_prn_bytes(raw):
+        if _is_dynamic_template_line(line):
+            continue
+        upper = line.lstrip().upper()
+        if upper.startswith(b"BITMAP "):
+            has_bitmap = True
+        elif upper == b"CLS":
+            has_cls = True
+        elif upper.startswith(b"CODEPAGE"):
+            has_codepage = True
+        static_lines.append(line)
+
+    if not has_bitmap:
+        raise RuntimeError("Amazon BarTender template PRN does not contain a BITMAP block.")
+    if not has_cls:
+        static_lines.append(b"CLS")
+    if not has_codepage:
+        static_lines.append(b"CODEPAGE 1252")
+    while static_lines and static_lines[-1] == b"":
+        static_lines.pop()
+    return static_lines
+
+
+def _encode_dynamic_lines(lines):
+    return [line.encode("cp1252", errors="replace") for line in lines]
 
 
 def expanded_rows(rows):
@@ -155,4 +236,30 @@ def generate_amazon_prn(out, rows, branch, progress_callback=None):
     with open(out, "w", encoding="cp1252", errors="replace", newline="\r\n") as f:
         f.write("\n".join(out_lines))
         f.write("\n")
+    return total
+
+
+def generate_amazon_prn_from_template(out, rows, branch, template_path=None, progress_callback=None):
+    static_lines = _read_template_static_lines(template_path or default_amazon_template_path())
+    labels = list(expanded_rows(rows))
+    total = len(labels)
+    out_lines = []
+    done = 0
+    for idx in range(0, total, 2):
+        out_lines.extend(static_lines)
+        dynamic_lines = []
+        add_label(dynamic_lines, labels[idx], branch, "left")
+        done += 1
+        if idx + 1 < total:
+            add_label(dynamic_lines, labels[idx + 1], branch, "right")
+            done += 1
+        out_lines.extend(_encode_dynamic_lines(dynamic_lines))
+        out_lines.append(b"PRINT 1,1")
+        if progress_callback and (done == total or done % 100 == 0):
+            progress_callback(done, total)
+
+    Path(out).parent.mkdir(parents=True, exist_ok=True)
+    with open(out, "wb") as f:
+        f.write(b"\r\n".join(out_lines))
+        f.write(b"\r\n")
     return total
