@@ -798,7 +798,7 @@ class AmazonLabelFrame(ttk.Frame):
             self.record_amazon_output("PRN", prn_path, report_path, generated)
             self.set_status(f"Amazon PRN generated: {generated} labels -> {prn_path}")
             if print_after:
-                self.print_last_prn()
+                self.print_last_prn_direct()
             else:
                 messagebox.showinfo("Amazon PRN generated", f"Amazon PRN generated successfully.\n\nLabels: {generated}\nPRN:\n{prn_path}\n\nReport CSV:\n{report_path}")
 

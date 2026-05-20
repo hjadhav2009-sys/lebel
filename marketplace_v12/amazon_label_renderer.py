@@ -53,6 +53,22 @@ LAYOUT_POSITIONS = {
     "barcode_text_font": 4.25,
     "title_bottom_mm": 1.35,
     "title_font": 3.55,
+    # TSPL TEXT with rotation 180 uses a different anchor than ReportLab/Tk.
+    # Keep these printer anchors in the same shared map so PRN does not carry
+    # its own layout constants or field order.
+    "prn_heading_anchor_x_mm": 14.4,
+    "prn_field_label_anchor_x_mm": 3.9,
+    "prn_field_colon_anchor_x_mm": 17.6,
+    "prn_field_value_anchor_x_mm": 19.1,
+    "prn_body_text_anchor_x_mm": 3.9,
+    "prn_barcode_text_anchor_x_mm": 13.8,
+    "prn_title_anchor_x_mm": 3.9,
+    "prn_heading_y_adjust_dots": 7,
+    "prn_field_y_adjust_dots": 4,
+    "prn_care_y_adjust_dots": 2,
+    "prn_address_y_adjust_dots": 1,
+    "prn_barcode_text_y_adjust_dots": 28,
+    "prn_title_y_adjust_dots": 25,
 }
 
 
@@ -421,7 +437,7 @@ def generate_amazon_pdf(out, rows, branch, progress_callback=None, layout=PDF_LA
 
 def generate_amazon_pdf_proof(out, row, branch, layout=PDF_LAYOUT_BARTENDER):
     proof_row = dict(row)
-    proof_row["print_qty"] = 1
+    proof_row["print_qty"] = 2 if normalize_pdf_layout(layout) == PDF_LAYOUT_BARTENDER else 1
     return generate_amazon_pdf(out, [proof_row], branch, layout=layout)
 
 

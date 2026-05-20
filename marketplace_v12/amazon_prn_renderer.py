@@ -80,10 +80,10 @@ def text_fit(value, max_chars):
     return value[: max_chars - 1].rstrip() + "."
 
 
-def add_field(lines, side, y, label, value):
-    field_x = x_from_left_mm(side, 3.9)
-    colon_x = x_from_left_mm(side, 17.6)
-    value_x = x_from_left_mm(side, 19.1)
+def add_field(lines, side, y, label, value, positions):
+    field_x = x_from_left_mm(side, positions["prn_field_label_anchor_x_mm"])
+    colon_x = x_from_left_mm(side, positions["prn_field_colon_anchor_x_mm"])
+    value_x = x_from_left_mm(side, positions["prn_field_value_anchor_x_mm"])
     lines.append(text_cmd(field_x, y, "0", 180, 4, 4, label))
     lines.append(text_cmd(colon_x, y, "0", 180, 4, 4, ":"))
     lines.append(text_cmd(value_x, y, "0", 180, 4, 4, text_fit(value, 42)))
@@ -93,22 +93,22 @@ def add_label(lines, row, branch, side):
     positions = get_amazon_layout_positions()
     payload = build_amazon_label_payload(row, branch)
 
-    heading_x = x_from_left_mm(side, 14.4)
-    field_x = x_from_left_mm(side, 3.9)
+    heading_x = x_from_left_mm(side, positions["prn_heading_anchor_x_mm"])
+    field_x = x_from_left_mm(side, positions["prn_body_text_anchor_x_mm"])
     barcode_x = x_from_left_mm(side, positions["barcode_margin_x_mm"])
-    barcode_text_x = x_from_left_mm(side, 13.8)
-    title_x = field_x
+    barcode_text_x = x_from_left_mm(side, positions["prn_barcode_text_anchor_x_mm"])
+    title_x = x_from_left_mm(side, positions["prn_title_anchor_x_mm"])
 
-    lines.append(text_cmd(heading_x, y_from_top(positions["heading_top_mm"], 7), "0", 180, 13, 9, payload["heading"]))
+    lines.append(text_cmd(heading_x, y_from_top(positions["heading_top_mm"], positions["prn_heading_y_adjust_dots"]), "0", 180, 13, 9, payload["heading"]))
 
     for index, (label, value) in enumerate(payload["field_rows"]):
-        y = y_from_top(positions["field_top_mm"] + index * positions["field_gap_mm"], 4)
-        add_field(lines, side, y, label, value)
+        y = y_from_top(positions["field_top_mm"] + index * positions["field_gap_mm"], positions["prn_field_y_adjust_dots"])
+        add_field(lines, side, y, label, value, positions)
 
     lines.append(
         text_cmd(
             field_x,
-            y_from_top(positions["care_top_mm"], 2),
+            y_from_top(positions["care_top_mm"], positions["prn_care_y_adjust_dots"]),
             "0",
             180,
             3,
@@ -123,12 +123,12 @@ def add_label(lines, row, branch, side):
         top_mm = positions["address_top_mm"] + index * positions["address_gap_mm"]
         if top_mm > max_address_top:
             break
-        lines.append(text_cmd(field_x, y_from_top(top_mm, 1), "0", 180, 3, 4, text_fit(line, 48)))
+        lines.append(text_cmd(field_x, y_from_top(top_mm, positions["prn_address_y_adjust_dots"]), "0", 180, 3, 4, text_fit(line, 48)))
 
     barcode_y = dots(positions["barcode_bottom_mm"]) + BARCODE_HEIGHT_DOTS
     lines.append(barcode_cmd(barcode_x, barcode_y, payload["fnsku"]))
-    lines.append(text_cmd(barcode_text_x, dots(positions["barcode_text_bottom_mm"]) + 28, "ROMAN.TTF", 180, 1, 8, payload["fnsku"]))
-    lines.append(text_cmd(title_x, dots(positions["title_bottom_mm"]) + 25, "0", 180, 5, 6, payload["title"]))
+    lines.append(text_cmd(barcode_text_x, dots(positions["barcode_text_bottom_mm"]) + positions["prn_barcode_text_y_adjust_dots"], "ROMAN.TTF", 180, 1, 8, payload["fnsku"]))
+    lines.append(text_cmd(title_x, dots(positions["title_bottom_mm"]) + positions["prn_title_y_adjust_dots"], "0", 180, 5, 6, payload["title"]))
 
 
 def expanded_rows(rows):
