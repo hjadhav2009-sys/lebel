@@ -74,15 +74,15 @@ def add_label(lines, row, branch, side):
     else:
         title_x, field_x, barcode_x, barcode_text_x, bottom_x = 694, 778, 761, 699, 778
 
-    lines.append(text_cmd(title_x, 360, "0", 180, 10, 7, f"{payload['heading']} "))
-    add_field(lines, field_x, 326, "Brand", payload["brand"])
-    add_field(lines, field_x, 310, "SKU No", payload["sku"])
-    add_field(lines, field_x, 294, "Net Quantity", payload["qty"])
-    add_field(lines, field_x, 278, "MRP", payload["mrp"])
-    add_field(lines, field_x, 262, "Generic Name", payload["generic"])
+    lines.append(text_cmd(title_x, 374, "0", 180, 13, 9, f"{payload['heading']} "))
+    add_field(lines, field_x, 342, "Brand", payload["brand"])
+    add_field(lines, field_x, 326, "SKU No", payload["sku"])
+    add_field(lines, field_x, 310, "Net Quantity", payload["qty"])
+    add_field(lines, field_x, 294, "MRP", payload["mrp"])
+    add_field(lines, field_x, 278, "Generic Name", payload["generic"])
 
-    lines.append(text_cmd(field_x, 238, "0", 180, 3, 4, "Manufactured by / Marketed By / Customer care Details:"))
-    y = 219
+    lines.append(text_cmd(field_x, 252, "0", 180, 3, 4, "Manufactured by / Marketed By / Customer care Details:"))
+    y = 232
     for addr in payload["address"]:
         lines.append(text_cmd(field_x, y, "0", 180, 3, 4, addr))
         y -= 14
@@ -92,9 +92,9 @@ def add_label(lines, row, branch, side):
     y -= 14
     lines.append(text_cmd(field_x, y, "0", 180, 3, 4, payload["origin"]))
 
-    lines.append(barcode_cmd(barcode_x, 89, payload["fnsku"]))
-    lines.append(text_cmd(barcode_text_x, 50, "ROMAN.TTF", 180, 1, 8, payload["fnsku"]))
-    lines.append(text_cmd(bottom_x, 26, "0", 180, 4, 5, payload["title"]))
+    lines.append(barcode_cmd(barcode_x, 109, payload["fnsku"]))
+    lines.append(text_cmd(barcode_text_x, 63, "ROMAN.TTF", 180, 1, 8, payload["fnsku"]))
+    lines.append(text_cmd(bottom_x, 37, "0", 180, 5, 6, payload["title"]))
 
 
 def expanded_rows(rows):

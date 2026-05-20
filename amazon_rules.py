@@ -1,9 +1,13 @@
 import json
 import re
+import sys
 from pathlib import Path
 
 
-BASE_DIR = Path(__file__).resolve().parent
+if getattr(sys, "frozen", False):
+    BASE_DIR = Path(sys.executable).resolve().parent
+else:
+    BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 CATEGORY_RULES_FILE = DATA_DIR / "amazon_category_rules.json"
 BRAND_RULES_FILE = DATA_DIR / "amazon_brand_rules.json"

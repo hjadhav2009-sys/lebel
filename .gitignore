@@ -1,5 +1,7 @@
 __pycache__/
 *.py[cod]
+dist/
+build/
 logs/*.txt
 outputs/*.pdf
 outputs/*.csv

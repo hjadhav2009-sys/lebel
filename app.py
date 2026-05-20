@@ -31,15 +31,28 @@ except Exception:
     mm = 2.834645669291339
     code128 = None
 
-APP_VERSION = "V16 Advanced"
+APP_VERSION = "V17 Advanced"
 APP_NAME = f"M Men Style - Marketplace Label Generator {APP_VERSION}"
-BASE_DIR = Path(__file__).resolve().parent
+if getattr(sys, "frozen", False):
+    BASE_DIR = Path(sys.executable).resolve().parent
+else:
+    BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 OUT_DIR = BASE_DIR / "outputs"
 LOG_DIR = BASE_DIR / "logs"
 SAMPLE_DIR = BASE_DIR / "samples"
 for d in (DATA_DIR, OUT_DIR, LOG_DIR, SAMPLE_DIR):
     d.mkdir(exist_ok=True)
+if getattr(sys, "frozen", False):
+    bundled_data_dir = Path(getattr(sys, "_MEIPASS", BASE_DIR)) / "data"
+    if bundled_data_dir.exists() and bundled_data_dir != DATA_DIR:
+        for src in bundled_data_dir.glob("*.json"):
+            dst = DATA_DIR / src.name
+            if not dst.exists():
+                try:
+                    shutil.copy2(src, dst)
+                except Exception:
+                    pass
 SETTINGS_FILE = DATA_DIR / "branches.json"
 FORMATS_FILE = DATA_DIR / "label_formats.json"
 LOG_FILE = LOG_DIR / "debug_log.txt"
@@ -131,6 +144,22 @@ def log(msg):
             f.write(time.strftime("%Y-%m-%d %H:%M:%S") + " | " + str(msg) + "\n")
     except Exception:
         pass
+
+
+def install_global_exception_hooks():
+    def handle_exception(exc_type, exc, tb):
+        text = "".join(traceback.format_exception(exc_type, exc, tb))
+        log(text)
+        try:
+            messagebox.showerror("Application error", f"An error was written to logs/debug_log.txt.\n\n{text[-1200:]}")
+        except Exception:
+            pass
+
+    sys.excepthook = handle_exception
+    if hasattr(threading, "excepthook"):
+        def handle_thread_exception(args):
+            handle_exception(args.exc_type, args.exc_value, args.exc_traceback)
+        threading.excepthook = handle_thread_exception
 
 
 load_formats()
@@ -347,8 +376,16 @@ class App(tk.Tk):
         self.build_ui()
         self.refresh_branches()
         self.show_empty_preview()
-        self.try_auto_load_amazon_master()
+        self.after(300, self.try_auto_load_amazon_master_async)
         log("App started")
+
+    def report_callback_exception(self, exc_type, exc, tb):
+        text = "".join(traceback.format_exception(exc_type, exc, tb))
+        log(text)
+        try:
+            messagebox.showerror("Application error", f"An error was written to logs/debug_log.txt.\n\n{text[-1200:]}")
+        except Exception:
+            pass
 
     def build_ui(self):
         style = ttk.Style()
@@ -359,18 +396,23 @@ class App(tk.Tk):
         nb = ttk.Notebook(self)
         self.main_notebook = nb
         nb.pack(fill="both", expand=True, padx=8, pady=8)
+        self.tab_home = ttk.Frame(nb)
         self.tab_gen = ttk.Frame(nb)
         self.tab_amazon = ttk.Frame(nb)
         self.tab_set = ttk.Frame(nb)
         self.tab_map = ttk.Frame(nb)
+        nb.add(self.tab_home, text="Dashboard")
         nb.add(self.tab_gen, text="Flipkart Labels")
         nb.add(self.tab_amazon, text="Amazon Labels")
         nb.add(self.tab_set, text="Branch / Address Settings")
         nb.add(self.tab_map, text="Format / Mapping Settings")
+        self.build_dashboard_tab()
 
         toolbar = ttk.Frame(self.tab_gen)
         toolbar.pack(fill="x", padx=4, pady=4)
-        ttk.Button(toolbar, text="Upload Files", command=self.upload_files).pack(side="left", padx=4)
+        ttk.Button(toolbar, text="Back", command=self.show_dashboard).pack(side="left", padx=4)
+        self.flipkart_upload_btn = ttk.Button(toolbar, text="Upload Files", command=self.upload_files)
+        self.flipkart_upload_btn.pack(side="left", padx=4)
         ttk.Button(toolbar, text="Clear", command=self.clear_files).pack(side="left", padx=4)
         ttk.Button(toolbar, text="Preview Selected", command=self.preview_selected).pack(side="left", padx=12)
         ttk.Button(toolbar, text="Validate All", command=self.validate_all).pack(side="left", padx=4)
@@ -434,9 +476,41 @@ class App(tk.Tk):
         self.build_settings_tab()
         self.build_format_tab()
 
+    def build_dashboard_tab(self):
+        wrapper = ttk.Frame(self.tab_home)
+        wrapper.pack(fill="both", expand=True, padx=28, pady=28)
+        wrapper.columnconfigure(0, weight=1)
+        wrapper.rowconfigure(0, weight=1)
+        panel = ttk.Frame(wrapper)
+        panel.grid(row=0, column=0)
+        ttk.Label(panel, text="MARKETPLACE PRODUCT LABEL GENERATOR", font=("Arial", 20, "bold")).pack(pady=(0, 22))
+
+        def dashboard_button(text, command):
+            ttk.Button(panel, text=text, command=command, width=38).pack(fill="x", pady=5)
+
+        dashboard_button("Tool 1: Flipkart Labels", lambda: self.show_tool_tab(self.tab_gen, "Flipkart Labels ready."))
+        dashboard_button("Tool 2: Amazon Labels", lambda: self.show_tool_tab(self.tab_amazon, "Amazon Labels ready."))
+        dashboard_button("Tool 3: Flipkart PRN / Advanced", lambda: self.show_tool_tab(self.tab_gen, "Advanced Flipkart tools use the existing calibrated Flipkart screen."))
+        dashboard_button("Settings", lambda: self.show_tool_tab(self.tab_set, "Branch / Address Settings ready."))
+        dashboard_button("Exit", self.destroy)
+        ttk.Label(panel, text=f"{APP_VERSION} | Python mode and EXE mode supported").pack(pady=(18, 0))
+
+    def show_dashboard(self):
+        self.main_notebook.select(self.tab_home)
+        self.status_var.set("Dashboard ready.")
+
+    def show_tool_tab(self, tab, status=None):
+        self.main_notebook.select(tab)
+        if status:
+            self.status_var.set(status)
+
     def build_amazon_tab(self):
         toolbar = ttk.Frame(self.tab_amazon)
         toolbar.pack(fill="x", padx=6, pady=4)
+        nav_row = ttk.Frame(toolbar)
+        nav_row.pack(fill="x", pady=(0, 4))
+        ttk.Button(nav_row, text="Back", command=self.show_dashboard, width=12).pack(side="left", padx=3)
+        ttk.Label(nav_row, text="Amazon Labels").pack(side="left", padx=8)
 
         def step_row(label):
             row = ttk.Frame(toolbar)
@@ -450,8 +524,8 @@ class App(tk.Tk):
             return btn
 
         files_row = step_row("1) Files:")
-        step_button(files_row, "Upload Weekly Master Listing", self.upload_amazon_master_file, width=26)
-        step_button(files_row, "Upload Amazon Consignment File", self.upload_amazon_consignment_file, width=28)
+        self.amazon_master_upload_btn = step_button(files_row, "Upload Weekly Master Listing", self.upload_amazon_master_file, width=26)
+        self.amazon_consignment_upload_btn = step_button(files_row, "Upload Amazon Consignment File", self.upload_amazon_consignment_file, width=28)
         step_button(files_row, "Clear Amazon Consignment", self.clear_amazon_consignment, width=25)
         step_button(files_row, "Clear Master Listing", self.clear_amazon_master, width=22)
 
@@ -548,6 +622,7 @@ class App(tk.Tk):
     def build_settings_tab(self):
         top = ttk.Frame(self.tab_set)
         top.pack(fill="x", padx=8, pady=8)
+        ttk.Button(top, text="Back", command=self.show_dashboard).pack(side="left", padx=(0, 8))
         ttk.Label(top, text="Branch:").pack(side="left")
         self.settings_branch_var = tk.StringVar()
         self.settings_branch_combo = ttk.Combobox(top, textvariable=self.settings_branch_var, state="readonly", width=30)
@@ -587,6 +662,9 @@ class App(tk.Tk):
         ttk.Label(self.tab_set, text="Customer Care removed. This branch block is fixed for all labels from this branch.").pack(anchor="w", padx=14, pady=8)
 
     def build_format_tab(self):
+        nav = ttk.Frame(self.tab_map)
+        nav.pack(fill="x", padx=8, pady=(8, 0))
+        ttk.Button(nav, text="Back", command=self.show_dashboard).pack(side="left")
         settings_nb = ttk.Notebook(self.tab_map)
         settings_nb.pack(fill="both", expand=True, padx=6, pady=6)
         self.flipkart_map_frame = ttk.Frame(settings_nb)
@@ -949,16 +1027,43 @@ class App(tk.Tk):
     def upload_files(self):
         paths = filedialog.askopenfilenames(title="Select Flipkart CSV/XLSX files", filetypes=[("CSV/XLSX", "*.csv *.xlsx *.xls"), ("All Files", "*.*")])
         if paths:
-            self.load_paths(paths)
+            self.load_paths_async(paths)
 
     def load_samples(self):
         paths = list(SAMPLE_DIR.glob("Quality_Check*.csv"))
-        self.load_paths([str(p) for p in paths])
+        self.load_paths_async([str(p) for p in paths])
 
     def load_paths(self, paths):
-        self.status_var.set("Loading files. Please wait...")
-        self.update_idletasks()
-        loaded = 0
+        self.load_paths_async(paths)
+
+    def set_flipkart_loading(self, loading):
+        state = "disabled" if loading else "normal"
+        for attr in ("flipkart_upload_btn", "generate_btn"):
+            try:
+                getattr(self, attr).config(state=state)
+            except Exception:
+                pass
+
+    def load_paths_async(self, paths):
+        paths = [str(p) for p in paths]
+        if not paths:
+            return
+        self.set_flipkart_loading(True)
+        self.status_var.set("Loading Flipkart file(s) in background...")
+
+        def worker():
+            try:
+                loaded_items, errors = self.read_flipkart_paths(paths)
+                self.after(0, lambda: self.finish_flipkart_load(loaded_items, errors))
+            except Exception as e:
+                err = str(e)
+                log(traceback.format_exc())
+                self.after(0, lambda: self.finish_flipkart_load([], [err]))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def read_flipkart_paths(self, paths):
+        loaded_items = []
         errors = []
         for p in paths:
             try:
@@ -975,16 +1080,21 @@ class App(tk.Tk):
                 df = read_file(p)
                 fmt = detect_format(p, df)
                 qty = {int(i): detect_qty(df, r) for i, r in df.iterrows()}
-                self.files.append({"path": str(p), "df": df, "format": fmt, "qty": qty})
-                self.file_tree.insert("", "end", values=(Path(p).name, fmt, len(df)))
-                loaded += 1
+                loaded_items.append({"path": str(p), "df": df, "format": fmt, "qty": qty})
             except Exception as e:
                 errors.append(f"{Path(p).name}: {e}")
                 log(traceback.format_exc())
+        return loaded_items, errors
+
+    def finish_flipkart_load(self, loaded_items, errors):
+        self.set_flipkart_loading(False)
+        for item in loaded_items:
+            self.files.append(item)
+            self.file_tree.insert("", "end", values=(Path(item["path"]).name, item["format"], len(item["df"])))
         if self.file_tree.get_children() and not self.file_tree.selection():
             self.file_tree.selection_set(self.file_tree.get_children()[0])
             self.on_file_select_light(None)
-        self.status_var.set(f"Loaded {loaded} file(s). Select a file and click Preview Selected.")
+        self.status_var.set(f"Loaded {len(loaded_items)} file(s). Select a file and click Preview Selected.")
         if errors:
             messagebox.showerror("Load error", "\n".join(errors[:20]))
 
@@ -1201,10 +1311,85 @@ class App(tk.Tk):
                     log(traceback.format_exc())
         self.update_amazon_file_status()
 
+    def try_auto_load_amazon_master_async(self):
+        path = self.amazon_mapping.get("last_master_path", "")
+        candidates = []
+        if path:
+            candidates.append(Path(path))
+        candidates.append(CURRENT_AMAZON_MASTER_FILE)
+        for candidate in candidates:
+            try:
+                if candidate.exists():
+                    self.load_amazon_master_path_async(str(candidate), copy_to_current=False, quiet=True)
+                    return
+            except Exception:
+                log(traceback.format_exc())
+        self.update_amazon_file_status()
+
+    def set_amazon_file_loading(self, loading, kind="both"):
+        state = "disabled" if loading else "normal"
+        attrs = []
+        if kind in ("master", "both"):
+            attrs.append("amazon_master_upload_btn")
+        if kind in ("consignment", "both"):
+            attrs.append("amazon_consignment_upload_btn")
+        for attr in attrs:
+            try:
+                getattr(self, attr).config(state=state)
+            except Exception:
+                pass
+
     def upload_amazon_master_file(self):
         path = filedialog.askopenfilename(title="Select weekly Amazon master listing", filetypes=[("Excel Workbook", "*.xlsx *.xls"), ("All Files", "*.*")])
         if path:
-            self.load_amazon_master_path(path)
+            self.load_amazon_master_path_async(path)
+
+    def load_amazon_master_path_async(self, path, copy_to_current=True, quiet=False):
+        self.sync_amazon_mapping_from_widgets()
+        mapping_snapshot = copy.deepcopy(self.amazon_mapping)
+        self.set_amazon_file_loading(True, "master")
+        self.status_var.set("Loading Amazon weekly master listing in background...")
+
+        def worker():
+            try:
+                master = amazon_reader.load_master_listing_file(path, mapping_snapshot)
+                if copy_to_current:
+                    try:
+                        shutil.copy2(path, CURRENT_AMAZON_MASTER_FILE)
+                    except Exception:
+                        log(traceback.format_exc())
+                self.after(0, lambda: self.finish_amazon_master_load(path, master, quiet, None))
+            except Exception as e:
+                err = str(e)
+                log(traceback.format_exc())
+                self.after(0, lambda: self.finish_amazon_master_load(path, None, quiet, err))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def finish_amazon_master_load(self, path, master, quiet=False, error=None):
+        self.set_amazon_file_loading(False, "master")
+        if error:
+            if not quiet:
+                messagebox.showerror("Amazon master load error", error)
+                self.status_var.set("Amazon master listing load failed.")
+            else:
+                self.update_amazon_file_status()
+            return False
+        self.amazon_master = master
+        self.amazon_master_df = master.get("master_df")
+        self.amazon_master_path = str(path)
+        self.amazon_mapping["last_master_path"] = str(path)
+        amazon_rules.save_mapping_settings(self.amazon_mapping)
+        self.amazon_manual_mrp = {}
+        self.refresh_amazon_mapping_column_values()
+        self.rebuild_amazon_rows(preserve_quantities=True)
+        self.update_amazon_file_status()
+        row_count = len(self.amazon_master_df) if self.amazon_master_df is not None else 0
+        if quiet:
+            self.status_var.set(f"Auto-loaded Amazon master listing: {Path(path).name} ({row_count} row(s)).")
+        else:
+            self.status_var.set(f"Amazon master listing loaded: {row_count} row(s).")
+        return True
 
     def load_amazon_master_path(self, path, copy_to_current=True, quiet=False):
         self.sync_amazon_mapping_from_widgets()
@@ -1242,7 +1427,58 @@ class App(tk.Tk):
     def upload_amazon_consignment_file(self):
         path = filedialog.askopenfilename(title="Select Amazon consignment label file", filetypes=[("Excel Workbook", "*.xlsx *.xls"), ("All Files", "*.*")])
         if path:
-            self.load_amazon_consignment_path(path)
+            self.load_amazon_consignment_path_async(path)
+
+    def load_amazon_consignment_path_async(self, path):
+        self.sync_amazon_mapping_from_widgets()
+        mapping_snapshot = copy.deepcopy(self.amazon_mapping)
+        should_try_embedded_master = self.amazon_master is None
+        self.set_amazon_file_loading(True, "consignment")
+        self.status_var.set("Loading Amazon consignment file in background...")
+
+        def worker():
+            try:
+                consignment = amazon_reader.load_consignment_file(path, mapping_snapshot)
+                embedded_master = None
+                if should_try_embedded_master:
+                    try:
+                        embedded_master = amazon_reader.load_master_listing_file(path, mapping_snapshot)
+                    except Exception:
+                        embedded_master = None
+                self.after(0, lambda: self.finish_amazon_consignment_load(path, consignment, embedded_master, None))
+            except Exception as e:
+                err = str(e)
+                log(traceback.format_exc())
+                self.after(0, lambda: self.finish_amazon_consignment_load(path, None, None, err))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def finish_amazon_consignment_load(self, path, consignment, embedded_master=None, error=None):
+        self.set_amazon_file_loading(False, "consignment")
+        if error:
+            messagebox.showerror("Amazon consignment load error", error)
+            self.status_var.set("Amazon consignment load failed.")
+            return False
+        amazon_rules.merge_sheet_options(consignment.get("sheet_categories", []), consignment.get("sheet_brands", []))
+        self.amazon_consignment = consignment
+        self.amazon_consignment_df = consignment.get("consignment_df")
+        self.amazon_consignment_path = str(path)
+        self.amazon_manual_mrp = {}
+        self.amazon_qty_overrides = {}
+        if self.amazon_master is None and embedded_master is not None:
+            self.amazon_master = embedded_master
+            self.amazon_master_df = embedded_master.get("master_df")
+            self.amazon_master_path = str(path)
+        self.refresh_amazon_rule_widgets()
+        self.refresh_amazon_mapping_column_values()
+        self.rebuild_amazon_rows(preserve_quantities=False)
+        self.update_amazon_file_status()
+        row_count = len(self.amazon_consignment_df) if self.amazon_consignment_df is not None else 0
+        if self.amazon_master is None:
+            self.status_var.set(f"Amazon consignment loaded: {row_count} row(s). Upload Weekly Master Listing to auto-fill MRP.")
+        else:
+            self.status_var.set(f"Amazon consignment loaded: {row_count} row(s).")
+        return True
 
     def load_amazon_consignment_path(self, path):
         self.sync_amazon_mapping_from_widgets()
@@ -2378,17 +2614,18 @@ def ui_smoke_test():
     app = App()
     app.update_idletasks()
     tabs = [app.main_notebook.tab(i, "text") for i in range(app.main_notebook.index("end"))]
-    expected = ["Flipkart Labels", "Amazon Labels", "Branch / Address Settings", "Format / Mapping Settings"]
+    expected = ["Dashboard", "Flipkart Labels", "Amazon Labels", "Branch / Address Settings", "Format / Mapping Settings"]
     missing = [tab for tab in expected if tab not in tabs]
     app.destroy()
     if missing:
         print(f"UI SMOKE TEST failed. Missing tabs: {missing}")
         return 1
-    print("UI SMOKE TEST OK: Flipkart and Amazon tabs opened.")
+    print("UI SMOKE TEST OK: Dashboard, Flipkart, Amazon, and settings tabs opened.")
     return 0
 
 
 if __name__ == "__main__":
+    install_global_exception_hooks()
     if "--self-test" in sys.argv:
         sys.exit(self_test())
     if "--ui-smoke-test" in sys.argv:
