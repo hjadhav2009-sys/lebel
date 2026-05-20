@@ -3,5 +3,6 @@ __pycache__/
 logs/*.txt
 outputs/*.pdf
 outputs/*.csv
+outputs/*.prn
 data/current_amazon_master.xlsx
 ~$*.xlsx

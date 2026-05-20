@@ -12,6 +12,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, simpledialog
 
 import amazon_label_renderer
+import amazon_prn_renderer
 import amazon_reader
 import amazon_rules
 import amazon_validation
@@ -30,7 +31,7 @@ except Exception:
     mm = 2.834645669291339
     code128 = None
 
-APP_VERSION = "V14 Advanced"
+APP_VERSION = "V15 Advanced"
 APP_NAME = f"M Men Style - Marketplace Label Generator {APP_VERSION}"
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
@@ -337,6 +338,7 @@ class App(tk.Tk):
         self.amazon_category_rules = amazon_rules.load_category_rules()
         self.amazon_brand_rules = amazon_rules.load_brand_rules()
         self.amazon_last_report = ""
+        self.last_prn = ""
         self.last_pdf = ""
         self.status_var = tk.StringVar(value="Ready")
         self.row_qty_var = tk.StringVar(value="1")
@@ -444,8 +446,12 @@ class App(tk.Tk):
         ttk.Button(toolbar, text="Fix Blocking Rows", command=self.fix_amazon_blockers_dialog).pack(side="left", padx=4)
         self.amazon_generate_btn = ttk.Button(toolbar, text="Generate Amazon PDF", command=self.generate_amazon_pdf_clicked)
         self.amazon_generate_btn.pack(side="left", padx=4)
+        self.amazon_prn_btn = ttk.Button(toolbar, text="Generate Amazon PRN", command=self.generate_amazon_prn_clicked)
+        self.amazon_prn_btn.pack(side="left", padx=4)
         ttk.Button(toolbar, text="Open Last PDF", command=self.open_last_pdf).pack(side="left", padx=4)
+        ttk.Button(toolbar, text="Open Last PRN", command=self.open_last_prn).pack(side="left", padx=4)
         ttk.Button(toolbar, text="Print Last PDF", command=self.print_last_pdf).pack(side="left", padx=4)
+        ttk.Button(toolbar, text="Print Last PRN Direct", command=self.print_last_prn_direct).pack(side="left", padx=4)
         ttk.Label(toolbar, text="Branch:").pack(side="left", padx=(18, 4))
         self.amazon_branch_var = tk.StringVar(value=self.amazon_mapping.get("selected_branch", ""))
         self.amazon_branch_combo = ttk.Combobox(toolbar, textvariable=self.amazon_branch_var, state="readonly", width=24)
@@ -458,6 +464,7 @@ class App(tk.Tk):
         self.amazon_consignment_status_var = tk.StringVar(value="Consignment File: not loaded")
         ttk.Label(status_box, textvariable=self.amazon_master_status_var).pack(anchor="w")
         ttk.Label(status_box, textvariable=self.amazon_consignment_status_var).pack(anchor="w")
+        ttk.Label(status_box, text="Amazon Output Layout: BarTender 2UP 101.5x50 PRN style").pack(anchor="w")
 
         body = ttk.Panedwindow(self.tab_amazon, orient="horizontal")
         body.pack(fill="both", expand=True, padx=4, pady=4)
@@ -1489,48 +1496,54 @@ class App(tk.Tk):
         scale = size / 50.0
         c.create_rectangle(x0, y0, x0 + size, y0 + size, fill="white", outline="black", width=2)
         heading_font = min(28, max(16, int(2.55 * scale)))
-        brand_font = min(18, max(11, int(1.65 * scale)))
         body_font = min(14, max(8, int(1.07 * scale)))
         small_font = min(12, max(7, int(0.86 * scale)))
         heading = row.get("main_heading", "")
         brand = row.get("brand", "")
         fnsku = row.get("fnsku", "")
         c.create_text(x0 + size / 2, y0 + 1.3 * scale, text=heading[:34], anchor="n", font=("Arial", heading_font, "bold"))
-        c.create_text(x0 + size / 2, y0 + 5.1 * scale, text=brand[:42], anchor="n", font=("Arial", brand_font, "bold"))
-        c.create_line(x0 + 2.2 * scale, y0 + 7.0 * scale, x0 + size - 2.2 * scale, y0 + 7.0 * scale, width=2)
-        y = y0 + 8.6 * scale
-        lines = [
-            f"SKU No: {row.get('merchant_sku', '')}",
-            "Net Quantity: 1 N",
-            amazon_validation.format_mrp(row.get("mrp", "")),
-            f"Generic Name: {row.get('generic_name', '')}",
-            f"Title: {amazon_label_renderer.amazon_title_for_print(row.get('title', ''))}",
+        y = y0 + 7.2 * scale
+        fields = [
+            ("Brand", brand),
+            ("SKU No", row.get("merchant_sku", "")),
+            ("Net Quantity", "1 N"),
+            ("MRP", amazon_label_renderer.amazon_mrp_for_print(row.get("mrp", ""))),
+            ("Generic Name", row.get("generic_name", "") or heading),
         ]
-        for line in lines:
-            for part in amazon_label_renderer.wrap_text(line, 48)[:2]:
-                if y > y0 + 24.5 * scale:
-                    break
-                c.create_text(x0 + 2.7 * scale, y, text=part, anchor="nw", font=("Arial", body_font))
-                y += 1.42 * scale
-            y += 0.10 * scale
-        y = max(y, y0 + 26.0 * scale)
-        for i, line in enumerate(amazon_label_renderer.branch_address_lines(branch)):
-            font = ("Arial", small_font, "bold") if i == 0 else ("Arial", small_font)
-            for part in amazon_label_renderer.wrap_text(line, 52)[:2 if i in (1, 2) else 1]:
-                if y > y0 + 39.8 * scale:
-                    break
-                c.create_text(x0 + (2.7 if i == 0 else 3.5) * scale, y, text=part, anchor="nw", font=font)
-                y += 1.12 * scale
-        bx0 = x0 + 4.2 * scale
-        by0 = y0 + 41.4 * scale
+        for label, value in fields:
+            c.create_text(x0 + 2.5 * scale, y, text=label, anchor="nw", font=("Arial", body_font))
+            c.create_text(x0 + 20.5 * scale, y, text=":", anchor="nw", font=("Arial", body_font))
+            c.create_text(x0 + 22.2 * scale, y, text=str(value)[:42], anchor="nw", font=("Arial", body_font))
+            y += 2.0 * scale
+        y += 0.6 * scale
+        care = "Manufactured by / Marketed By / Customer care Details:"
+        c.create_text(x0 + 2.5 * scale, y, text=care, anchor="nw", font=("Arial", small_font, "bold"))
+        c.create_line(x0 + 2.5 * scale, y + 1.3 * scale, x0 + size - 2.2 * scale, y + 1.3 * scale, width=1)
+        y += 2.1 * scale
+        address_lines = []
+        for line in amazon_label_renderer.branch_address_lines(branch):
+            address_lines.extend(amazon_label_renderer.wrap_text(line, 44)[:2])
+        address_lines.extend([
+            f"Email Id:{branch.get('email', '')}",
+            f"Contact:{branch.get('phone', '')}",
+            f"Origin:{amazon_label_renderer.branch_origin_for_print(branch)}",
+        ])
+        for line in address_lines:
+            if y > y0 + 36.5 * scale:
+                break
+            c.create_text(x0 + 2.7 * scale, y, text=line, anchor="nw", font=("Arial", small_font))
+            y += 1.35 * scale
+        bx0 = x0 + 4.4 * scale
+        by0 = y0 + 38.7 * scale
         bw = 41.5 * scale
-        bh = 5.9 * scale
+        bh = 6.2 * scale
         seed = sum(ord(ch) for ch in fnsku)
         for i in range(135):
             if (i + seed) % 4 != 0:
                 xx = bx0 + i * bw / 135
                 c.create_line(xx, by0, xx, by0 + bh, width=1)
-        c.create_text(x0 + size / 2, y0 + 47.5 * scale, text=fnsku, anchor="n", font=("Arial", small_font))
+        c.create_text(x0 + size / 2, y0 + 45.5 * scale, text=fnsku, anchor="n", font=("Arial", small_font))
+        c.create_text(x0 + size / 2, y0 + 48.0 * scale, text=amazon_label_renderer.amazon_title_for_print(row.get("title", ""))[:58], anchor="n", font=("Arial", max(7, small_font - 1)))
 
     def amazon_blocking_items(self):
         items = []
@@ -1676,29 +1689,35 @@ class App(tk.Tk):
     def total_amazon_print_labels(self):
         return sum(amazon_validation.parse_positive_int(row.get("print_qty", 0)) for row in self.amazon_rows)
 
-    def generate_amazon_pdf_clicked(self):
+    def prepare_amazon_generation(self, output_kind):
         if self.amazon_consignment_df is None:
             messagebox.showwarning("No Amazon consignment", "Upload an Amazon consignment file first.")
-            return
-        if pdfcanvas is None or amazon_label_renderer.pdfcanvas is None:
-            messagebox.showerror("Missing package", "reportlab missing. Run install_requirements.bat.")
-            return
+            return None
         self.rebuild_amazon_rows()
         if amazon_validation.has_blocking_errors(self.amazon_rows):
             self.fix_amazon_blockers_dialog()
-            self.status_var.set("Amazon PDF blocked until validation issues are fixed.")
-            return
+            self.status_var.set(f"Amazon {output_kind} blocked until validation issues are fixed.")
+            return None
         total = self.total_amazon_print_labels()
         if total <= 0:
             messagebox.showerror("No labels", "Amazon print quantity is zero.")
-            return
+            return None
         if total > 20000:
             messagebox.showerror("Too many labels", f"You selected {total} labels. Please split into batches. Maximum 20,000 labels at once.")
-            return
+            return None
         if total > 2000:
-            ok = messagebox.askyesno("Large Amazon PDF", f"You are generating {total} Amazon labels. This can take time and create a large PDF. Continue?")
+            ok = messagebox.askyesno(f"Large Amazon {output_kind}", f"You are generating {total} Amazon labels. This can take time and create a large file. Continue?")
             if not ok:
-                return
+                return None
+        return total
+
+    def generate_amazon_pdf_clicked(self):
+        if pdfcanvas is None or amazon_label_renderer.pdfcanvas is None:
+            messagebox.showerror("Missing package", "reportlab missing. Run install_requirements.bat.")
+            return
+        total = self.prepare_amazon_generation("PDF")
+        if total is None:
+            return
 
         stamp = time.strftime("%Y%m%d_%H%M%S")
         out = str(OUT_DIR / f"amazon_labels_{stamp}.pdf")
@@ -1727,6 +1746,38 @@ class App(tk.Tk):
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def generate_amazon_prn_clicked(self):
+        total = self.prepare_amazon_generation("PRN")
+        if total is None:
+            return
+
+        stamp = time.strftime("%Y%m%d_%H%M%S")
+        out = str(OUT_DIR / f"amazon_labels_{stamp}.prn")
+        report_out = str(OUT_DIR / f"amazon_label_report_{stamp}.csv")
+        rows_snapshot = copy.deepcopy(self.amazon_rows)
+        branch = copy.deepcopy(self.current_amazon_branch())
+        try:
+            self.amazon_prn_btn.config(state="disabled")
+        except Exception:
+            pass
+        self.status_var.set(f"Generating {total} Amazon PRN labels in background... app will stay usable.")
+        self.update_idletasks()
+
+        def progress(done, grand_total):
+            self.after(0, lambda d=done, t=grand_total: self.status_var.set(f"Generating Amazon PRN... {d}/{t} labels done"))
+
+        def worker():
+            try:
+                amazon_validation.write_report_csv(report_out, rows_snapshot)
+                amazon_prn_renderer.generate_amazon_prn(out, rows_snapshot, branch, progress_callback=progress)
+                self.after(0, lambda: self.on_amazon_prn_done(out, report_out, total))
+            except Exception as e:
+                err = str(e)
+                log(traceback.format_exc())
+                self.after(0, lambda: self.on_amazon_prn_error(err))
+
+        threading.Thread(target=worker, daemon=True).start()
+
     def on_amazon_pdf_done(self, out, report_out, total):
         self.last_pdf = out
         self.amazon_last_report = report_out
@@ -1744,6 +1795,24 @@ class App(tk.Tk):
             pass
         messagebox.showerror("Amazon PDF error", err)
         self.status_var.set("Amazon PDF generation failed. Check logs/debug_log.txt")
+
+    def on_amazon_prn_done(self, out, report_out, total):
+        self.last_prn = out
+        self.amazon_last_report = report_out
+        try:
+            self.amazon_prn_btn.config(state="normal")
+        except Exception:
+            pass
+        self.status_var.set(f"Amazon PRN generated: {total} labels -> {out}")
+        messagebox.showinfo("Amazon PRN generated", f"Amazon PRN generated successfully.\n\nLabels: {total}\nPRN:\n{out}\n\nReport CSV:\n{report_out}")
+
+    def on_amazon_prn_error(self, err):
+        try:
+            self.amazon_prn_btn.config(state="normal")
+        except Exception:
+            pass
+        messagebox.showerror("Amazon PRN error", err)
+        self.status_var.set("Amazon PRN generation failed. Check logs/debug_log.txt")
 
     def show_empty_preview(self):
         self.preview.delete("all")
@@ -2083,6 +2152,15 @@ class App(tk.Tk):
         except Exception:
             subprocess.Popen([self.last_pdf], shell=True)
 
+    def open_last_prn(self):
+        if not self.last_prn or not os.path.exists(self.last_prn):
+            messagebox.showwarning("No PRN", "Generate Amazon PRN first.")
+            return
+        try:
+            os.startfile(self.last_prn)
+        except Exception:
+            subprocess.Popen([self.last_prn], shell=True)
+
     def print_last_pdf(self):
         if not self.last_pdf or not os.path.exists(self.last_pdf):
             messagebox.showwarning("No PDF", "Generate PDF first.")
@@ -2092,6 +2170,41 @@ class App(tk.Tk):
             self.status_var.set("Print command sent. Use Actual Size / 100% / No Scaling.")
         except Exception as e:
             messagebox.showerror("Print error", f"Open PDF and press Ctrl+P.\n\n{e}")
+
+    def print_last_prn_direct(self):
+        if not self.last_prn or not os.path.exists(self.last_prn):
+            messagebox.showwarning("No PRN", "Generate Amazon PRN first.")
+            return
+        try:
+            import win32print
+        except Exception:
+            messagebox.showwarning(
+                "pywin32 missing",
+                "Install pywin32 or copy PRN manually to printer.\n\n"
+                f'copy /b "{self.last_prn}" "\\\\COMPUTER\\TSC TE244"',
+            )
+            return
+        printer_name = simpledialog.askstring("Raw PRN Print", "Printer share/name:", initialvalue="TSC TE244", parent=self)
+        if not printer_name:
+            return
+        try:
+            with open(self.last_prn, "rb") as f:
+                data = f.read()
+            handle = win32print.OpenPrinter(printer_name)
+            try:
+                job = win32print.StartDocPrinter(handle, 1, ("Amazon Labels PRN", None, "RAW"))
+                win32print.StartPagePrinter(handle)
+                win32print.WritePrinter(handle, data)
+                win32print.EndPagePrinter(handle)
+                win32print.EndDocPrinter(handle)
+            finally:
+                win32print.ClosePrinter(handle)
+            self.status_var.set(f"Raw PRN sent to {printer_name}.")
+        except Exception as e:
+            messagebox.showerror(
+                "PRN print error",
+                f"{e}\n\nFallback:\ncopy /b \"{self.last_prn}\" \"\\\\COMPUTER\\TSC TE244\"",
+            )
 
 
 def self_test():
@@ -2206,7 +2319,20 @@ def self_test():
             return 1
         amazon_out = OUT_DIR / "SELF_TEST_amazon_labels.pdf"
         total_amazon = amazon_label_renderer.generate_amazon_pdf(amazon_out, rows, branch)
+        prn_out = OUT_DIR / "SELF_TEST_amazon_labels.prn"
+        total_prn = amazon_prn_renderer.generate_amazon_prn(prn_out, rows, branch)
+        prn_text = prn_out.read_text(encoding="cp1252", errors="replace")
+        if not prn_text.startswith("SIZE 101.5 mm, 50 mm"):
+            print("SELF TEST Amazon PRN failed: missing SIZE header")
+            return 1
+        if "BARCODE" not in prn_text:
+            print("SELF TEST Amazon PRN failed: missing BARCODE command")
+            return 1
+        if "PRINT" not in prn_text:
+            print("SELF TEST Amazon PRN failed: missing PRINT command")
+            return 1
         print(f"SELF TEST Amazon OK ({test_mode}): detected {source_count} row(s), generated {total_amazon} labels at {amazon_out}")
+        print(f"SELF TEST Amazon PRN OK: generated {total_prn} labels at {prn_out}")
         print(f"SELF TEST Amazon report: {report_out}")
     else:
         print("SELF TEST Amazon skipped: samples/amazon_master.xlsx + samples/amazon_consignment.xlsx or samples/use it amazon.xlsx not found")
