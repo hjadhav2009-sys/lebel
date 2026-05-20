@@ -1,5 +1,8 @@
 __pycache__/
 *.pyc
+build/
+dist/
+MMS_Label_Tools_Output/
 outputs/*.pdf
 outputs/*.csv
 outputs/*.prn
@@ -8,4 +11,5 @@ marketplace_v12/outputs/*.pdf
 marketplace_v12/outputs/*.csv
 marketplace_v12/outputs/*.prn
 marketplace_v12/logs/*.txt
+!marketplace_v12/reference_templates/amazon/amazon_template.prn
 ~$*.xlsx

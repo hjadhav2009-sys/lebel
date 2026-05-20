@@ -128,7 +128,14 @@ def branch_errors(branch):
     missing = []
     if not clean_text(branch.get("marketed_by", "") or branch.get("company", "")):
         missing.append("Branch company/marketed by missing")
-    if not clean_text(branch.get("address", "")):
+    address = " ".join(
+        [
+            clean_text(branch.get("address_line1", "")),
+            clean_text(branch.get("address_line2", "")),
+            clean_text(branch.get("city_state", "")),
+        ]
+    ).strip() or clean_text(branch.get("address", ""))
+    if not address:
         missing.append("Branch address missing")
     if not clean_text(branch.get("email", "")):
         missing.append("Branch email missing")

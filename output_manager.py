@@ -8,11 +8,21 @@ from datetime import datetime
 
 APP_FOLDER_NAME = "MMS_Label_Tools_Output"
 
+try:
+    from marketplace_v12 import runtime_paths
+except Exception:
+    runtime_paths = None
+
 def desktop_dir() -> Path:
     d = Path.home() / "Desktop"
     return d if d.exists() else Path.home()
 
 def root_dir() -> Path:
+    if runtime_paths is not None:
+        try:
+            return runtime_paths.output_root()
+        except Exception:
+            pass
     root = desktop_dir() / APP_FOLDER_NAME
     for sub in [
         "Amazon_Packing_Labels",

@@ -42,6 +42,9 @@ DEFAULT_MAPPING_SETTINGS = {
     "selected_branch": "",
     "last_master_path": "",
     "pdf_layout": "BarTender 2UP 101.5x50",
+    "prn_mode": "template_barcode_bitmap",
+    "template_subtype": "caption_template",
+    "template_layout": "4UP Caption Template 101.6x101.6",
     "consignment": {
         "merchant_sku": "Merchant SKU",
         "title": "Title",
@@ -173,6 +176,16 @@ def load_mapping_settings():
         changed = True
     if "pdf_layout" not in data:
         data["pdf_layout"] = DEFAULT_MAPPING_SETTINGS["pdf_layout"]
+        changed = True
+    if "prn_mode" not in data:
+        data["prn_mode"] = DEFAULT_MAPPING_SETTINGS["prn_mode"]
+        changed = True
+    if "template_layout" not in data:
+        data["template_layout"] = DEFAULT_MAPPING_SETTINGS["template_layout"]
+        changed = True
+    if "template_subtype" not in data:
+        data["template_subtype"] = DEFAULT_MAPPING_SETTINGS["template_subtype"]
+        changed = True
     if changed or not MAPPING_SETTINGS_FILE.exists():
         save_mapping_settings(data)
     return data
@@ -183,6 +196,9 @@ def save_mapping_settings(data):
         "selected_branch": clean_text(data.get("selected_branch", "")),
         "last_master_path": clean_text(data.get("last_master_path", "")),
         "pdf_layout": clean_text(data.get("pdf_layout", DEFAULT_MAPPING_SETTINGS["pdf_layout"])) or DEFAULT_MAPPING_SETTINGS["pdf_layout"],
+        "prn_mode": clean_text(data.get("prn_mode", DEFAULT_MAPPING_SETTINGS["prn_mode"])) or DEFAULT_MAPPING_SETTINGS["prn_mode"],
+        "template_subtype": clean_text(data.get("template_subtype", DEFAULT_MAPPING_SETTINGS["template_subtype"])) or DEFAULT_MAPPING_SETTINGS["template_subtype"],
+        "template_layout": clean_text(data.get("template_layout", DEFAULT_MAPPING_SETTINGS["template_layout"])) or DEFAULT_MAPPING_SETTINGS["template_layout"],
         "consignment": {},
         "master": {},
     }

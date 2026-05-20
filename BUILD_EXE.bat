@@ -35,6 +35,7 @@ python -m PyInstaller ^
   --add-data "marketplace_v12\data;marketplace_v12\data" ^
   --add-data "marketplace_v12\samples;marketplace_v12\samples" ^
   --add-data "marketplace_v12\reference_templates;marketplace_v12\reference_templates" ^
+  --add-data "marketplace_v12\reference_templates\amazon\amazon_template.prn;reference_templates\amazon" ^
   --collect-all reportlab ^
   --collect-submodules reportlab.graphics.barcode ^
   --hidden-import reportlab.graphics.barcode.code128 ^

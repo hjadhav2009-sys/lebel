@@ -2,7 +2,13 @@
 from PyInstaller.utils.hooks import collect_submodules
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('assets', 'assets'), ('marketplace_v12\\data', 'marketplace_v12\\data'), ('marketplace_v12\\samples', 'marketplace_v12\\samples'), ('marketplace_v12\\reference_templates', 'marketplace_v12\\reference_templates')]
+datas = [
+    ('assets', 'assets'),
+    ('marketplace_v12\\data', 'marketplace_v12\\data'),
+    ('marketplace_v12\\samples', 'marketplace_v12\\samples'),
+    ('marketplace_v12\\reference_templates', 'marketplace_v12\\reference_templates'),
+    ('marketplace_v12\\reference_templates\\amazon\\amazon_template.prn', 'reference_templates\\amazon'),
+]
 binaries = []
 hiddenimports = ['reportlab.graphics.barcode.code128', 'reportlab.graphics.barcode.code39', 'reportlab.graphics.barcode.code93', 'reportlab.graphics.barcode.codabar', 'reportlab.graphics.barcode.eanbc', 'reportlab.graphics.barcode.qr', 'PIL._tkinter_finder', 'win32print', 'win32api', 'win32con']
 hiddenimports += collect_submodules('reportlab.graphics.barcode')

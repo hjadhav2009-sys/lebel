@@ -144,9 +144,15 @@ def branch_origin_for_print(branch):
 
 
 def branch_address_lines(branch):
+    split_address = [
+        clean_text(branch.get("address_line1", "")),
+        clean_text(branch.get("address_line2", "")),
+        clean_text(branch.get("city_state", "")),
+    ]
+    address = " ".join([line for line in split_address if line])
     lines = [
         clean_text(branch.get("marketed_by", "") or branch.get("company", "")),
-        clean_text(branch.get("address", "")),
+        clean_text(address or branch.get("address", "")),
     ]
     return [line for line in lines if clean_text(line) and not line.endswith(": ")]
 
