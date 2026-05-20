@@ -1,0 +1,278 @@
+{
+  "key_chain": {
+    "title": "Key Chain",
+    "generic": "Key Chain",
+    "fields": [
+      [
+        "Comment",
+        [
+          "comment"
+        ]
+      ],
+      [
+        "Color",
+        [
+          "color"
+        ]
+      ],
+      [
+        "Model Number",
+        [
+          "model_number",
+          "model no",
+          "model"
+        ]
+      ],
+      [
+        "Brand",
+        [
+          "brand"
+        ]
+      ]
+    ]
+  },
+  "pendant_locket": {
+    "title": "Pendant Locket",
+    "generic": "Pendant Locket",
+    "fields": [
+      [
+        "Body Material",
+        [
+          "body_material",
+          "material"
+        ]
+      ],
+      [
+        "Plating",
+        [
+          "plating"
+        ]
+      ],
+      [
+        "Brand Color",
+        [
+          "brand_color",
+          "color"
+        ]
+      ],
+      [
+        "Model Number",
+        [
+          "model_number",
+          "model no",
+          "model"
+        ]
+      ],
+      [
+        "Brand",
+        [
+          "brand"
+        ]
+      ]
+    ]
+  },
+  "bangle_bracelet_armlet": {
+    "title": "Bangle Bracelet Armlet",
+    "generic": "Bracelet",
+    "fields": [
+      [
+        "Bangle Size",
+        [
+          "bangle_size",
+          "size"
+        ]
+      ],
+      [
+        "Diameter",
+        [
+          "diameter"
+        ]
+      ],
+      [
+        "Color",
+        [
+          "color"
+        ]
+      ],
+      [
+        "Pack Of",
+        [
+          "pack_of",
+          "pack of"
+        ]
+      ],
+      [
+        "Model Number",
+        [
+          "model_number",
+          "model no",
+          "model"
+        ]
+      ],
+      [
+        "Brand",
+        [
+          "brand"
+        ]
+      ]
+    ]
+  },
+  "earring": {
+    "title": "Earring",
+    "generic": "Earring",
+    "fields": [
+      [
+        "Sales Package",
+        [
+          "sales_package",
+          "sales package"
+        ]
+      ],
+      [
+        "Color",
+        [
+          "color"
+        ]
+      ],
+      [
+        "Model Number",
+        [
+          "model_number",
+          "model no",
+          "model"
+        ]
+      ],
+      [
+        "Type",
+        [
+          "type"
+        ]
+      ],
+      [
+        "Brand",
+        [
+          "brand"
+        ]
+      ]
+    ]
+  },
+  "jewellery_set": {
+    "title": "Jewellery Set",
+    "generic": "Jewellery Set",
+    "fields": [
+      [
+        "Sales Package",
+        [
+          "sales_package_id",
+          "sales_package",
+          "sales package"
+        ]
+      ],
+      [
+        "Color",
+        [
+          "color"
+        ]
+      ],
+      [
+        "Model Number",
+        [
+          "model_number",
+          "model no",
+          "model"
+        ]
+      ],
+      [
+        "Brand",
+        [
+          "brand"
+        ]
+      ]
+    ]
+  },
+  "ring": {
+    "title": "Ring",
+    "generic": "Ring",
+    "fields": [
+      [
+        "Color",
+        [
+          "color"
+        ]
+      ],
+      [
+        "Size",
+        [
+          "ring_size",
+          "size"
+        ]
+      ],
+      [
+        "Model Number",
+        [
+          "model_number",
+          "model no",
+          "model"
+        ]
+      ],
+      [
+        "Brand",
+        [
+          "brand"
+        ]
+      ]
+    ]
+  },
+  "necklace_chain": {
+    "title": "Necklace Chain",
+    "generic": "Necklace Chain",
+    "fields": [
+      [
+        "Color",
+        [
+          "color"
+        ]
+      ],
+      [
+        "Model Number",
+        [
+          "model_number",
+          "model no",
+          "model"
+        ]
+      ],
+      [
+        "Brand",
+        [
+          "brand"
+        ]
+      ]
+    ]
+  },
+  "car_hanger": {
+    "title": "Car Hanger",
+    "generic": "Car Hanger",
+    "fields": [
+      [
+        "Color",
+        [
+          "color"
+        ]
+      ],
+      [
+        "Model Number",
+        [
+          "model_number",
+          "model no",
+          "model"
+        ]
+      ],
+      [
+        "Brand",
+        [
+          "brand"
+        ]
+      ]
+    ]
+  }
+}

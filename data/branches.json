@@ -1,0 +1,20 @@
+{
+  "Mumbai Branch": {
+    "name": "Mumbai Branch",
+    "marketed_by": "Sujal Fashion Works, Shop No F-10,",
+    "address": "Amranate, Sec-09E, Kalamboli. Navi Mumbai",
+    "email": "Sujalfashionworks@gmail.com",
+    "phone": "+91-9594790929",
+    "origin": "Country of Origin: India",
+    "month_year": "May 2026",
+    "barcode_column": "FSN",
+    "dimension": "85mm*70mm*8mm",
+    "roll_gap_x_mm": "3.0",
+    "roll_margin_x_mm": "1.5",
+    "roll_margin_y_mm": "0.0",
+    "roll_rows_per_page": "1",
+    "roll_page_width_mm": "106.0",
+    "roll_label_width_mm": "50.0",
+    "roll_label_height_mm": "50.0"
+  }
+}
