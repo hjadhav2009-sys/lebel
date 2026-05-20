@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+outputs/*.pdf
+outputs/*.csv
+outputs/*.prn
+logs/*.txt
+marketplace_v12/outputs/*.pdf
+marketplace_v12/outputs/*.csv
+marketplace_v12/outputs/*.prn
+marketplace_v12/logs/*.txt
+~$*.xlsx
