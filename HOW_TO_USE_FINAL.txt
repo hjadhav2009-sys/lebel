@@ -1,0 +1,15 @@
+HOW TO USE FINAL VERSION
+
+1. Extract this folder to Desktop/local drive. Avoid building from server UNC path.
+2. Run INSTALL_REQUIREMENTS.bat once.
+3. Run BUILD_EXE.bat.
+4. Open dist\MMS_Label_Tools\MMS_Label_Tools.exe.
+
+Tool 2 recommended print flow:
+1. Open Tool 2.
+2. Upload Excel/CSV.
+3. Check Branches & Settings for address/customer-care details.
+4. Select Printer.
+5. Use Generate PRN & Print for real barcode labels.
+
+Do not use PDF for final barcode printing. PDF is preview/export. PRN/direct print is for scanning.

@@ -1,0 +1,20 @@
+{
+  "selected_branch": "",
+  "last_master_path": "C:/Users/Admin/Desktop/new all listing week 1.xlsx",
+  "consignment": {
+    "merchant_sku": "Merchant SKU",
+    "title": "Title",
+    "asin": "ASIN",
+    "fnsku": "FNSKU",
+    "shipped_qty": "Shipped",
+    "condition": "Condition"
+  },
+  "master": {
+    "item_name": "item-name",
+    "item_description": "item-description",
+    "seller_sku": "seller-sku",
+    "asin": "asin1",
+    "product_id": "product-id",
+    "mrp": "maximum-retail-price"
+  }
+}

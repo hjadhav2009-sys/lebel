@@ -1,0 +1,18 @@
+Tool 2 final use steps
+
+Build:
+1. Extract ZIP to local Desktop, not network path.
+2. Run INSTALL_REQUIREMENTS.bat
+3. Run BUILD_EXE.bat
+4. Open dist\MMS_Label_Tools\MMS_Label_Tools.exe
+
+Daily printing:
+1. Open Tool 2.
+2. Upload Excel/CSV files.
+3. Choose category/format mapping.
+4. Choose PRN Print Mode: bartender_readable.
+5. Select printer.
+6. Generate PRN & Print.
+
+Note:
+PDF is only preview. PRN is actual final print output.

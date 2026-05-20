@@ -1,0 +1,19 @@
+Note for Printer/BarTender Technician
+
+We are using the uploaded working BarTender PRN as the base template.
+The app generates TSPL/TSC PRN output with the same style of native printer commands.
+
+Please verify:
+1. Printer language is TSPL/TSC.
+2. Printer driver is installed in Windows.
+3. Printer is visible in Windows Printers & Scanners.
+4. Direct RAW printing works with pywin32 or by sending PRN to printer.
+5. Label media is 2-up roll, around 101.5/106 mm width x 50 mm height with 3 mm gap.
+6. Density/speed can be adjusted in PRN header if required.
+
+If barcode still fails:
+- reduce density from 10 to 8
+- reduce speed from 3 to 2
+- clean printer head
+- check label stock/ribbon if applicable
+- verify scanner supports Code 39

@@ -1,0 +1,8 @@
+How to print PRN file:
+
+Method 1: Use your printer software/driver import/send raw file option.
+
+Method 2: If printer is shared in Windows, use command like:
+copy /b "your_file.prn" "\\COMPUTER-NAME\PRINTER-SHARE-NAME"
+
+Ask your printer/software person for exact printer share name.

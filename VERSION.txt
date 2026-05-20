@@ -1,0 +1,2 @@
+V25_FINAL_UPDATED_PRN_CATEGORY_MAPPING
+Based on V24. Added final PRN/direct print instructions. Barcode logic unchanged.

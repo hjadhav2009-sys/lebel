@@ -1,0 +1,38 @@
+How to add/edit Tool 2 formats yourself
+
+A) Add or edit product fields
+1. Open Tool 2.
+2. Go to Format Mapping.
+3. Select a format or click Add New Format.
+4. Set:
+   - Format Key: short internal name, e.g. watch_band
+   - Label Title: printed title, e.g. Watch Band
+   - Generic Name: printed generic name
+5. In Fields, write one field per line:
+   Printed Name = excel_column_1, excel_column_2
+
+Example:
+Color = color
+Model Number = model_number, model no, model
+Brand = brand
+Size = size, ring_size
+
+B) Add a new PRN/barcode template
+1. Put the working BarTender PRN file into:
+   marketplace_v12/reference_templates/bartender_category_prn/
+2. Open marketplace_v12/data/prn_category_profiles.json
+3. Copy an existing profile and change:
+   - title_x/title_y
+   - text_x
+   - barcode_x/barcode_y
+   - code_x/code_y
+   - barcode type/height/narrow/wide copied exactly from BarTender PRN
+
+C) Which file controls what?
+- label_formats.json controls which Excel columns print.
+- prn_category_profiles.json controls barcode/position template.
+
+D) Most important rule
+Do not change barcode values if scanning is working:
+"type", "height", "rotation", "narrow", "wide"
+Only change text fields/positions first.

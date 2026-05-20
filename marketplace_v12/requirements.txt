@@ -1,0 +1,6 @@
+pandas
+pillow
+reportlab
+openpyxl
+
+pywin32>=306

@@ -1,0 +1,31 @@
+How to add new Tool 2 format yourself
+
+Open Tool 2 > Format Mapping tab.
+
+1. Click Add New Format.
+2. Set Format Key, example: watch_band
+3. Set Label Title, example: Watch Band
+4. Set Generic Name, example: Watch Band
+5. In Fields / Column Mapping write one field per line:
+
+Color = color
+Model Number = model_number, model no, model
+Brand = brand
+Material = material, body_material
+Size = size
+
+Left side before = is the label text printed.
+Right side after = is Excel/CSV column name.
+You can add multiple possible Excel column names separated by comma.
+
+Important for PRN readable print:
+Only around 10 lines fit in readable 50mm label. If you add too many fields, extra lines may be skipped in bartender_readable mode.
+
+If you want all legal/customer-care lines, go to Branches & Settings and set:
+prn_layout_mode = full_info_compact
+But that will make text smaller.
+
+Recommended workflow:
+- Use PDF only as rough preview.
+- Use PRN direct print for final barcode labels.
+- Print 1 test row before printing full batch.

@@ -1,0 +1,57 @@
+{
+  "categories": [
+    "Pendant Necklace",
+    "Bracelet",
+    "Keychain",
+    "Ring",
+    "Earring",
+    "Brooch",
+    "Car Hanger",
+    "Dashbord"
+  ],
+  "keyword_rules": {
+    "Pendant Necklace": [
+      "pendant",
+      "necklace",
+      "locket",
+      "chain"
+    ],
+    "Bracelet": [
+      "bracelet",
+      "bangle",
+      "kada",
+      "wristband"
+    ],
+    "Keychain": [
+      "keychain",
+      "key chain",
+      "keyring",
+      "key ring"
+    ],
+    "Ring": [
+      "ring"
+    ],
+    "Earring": [
+      "earring",
+      "ear stud",
+      "studs",
+      "hoop"
+    ],
+    "Brooch": [
+      "brooch"
+    ],
+    "Car Hanger": [
+      "car hanger",
+      "car hanging",
+      "rear view",
+      "rearview",
+      "ornament",
+      "dream catcher"
+    ],
+    "Dashbord": [
+      "dashboard",
+      "dashbord"
+    ]
+  },
+  "manual_rules": {}
+}

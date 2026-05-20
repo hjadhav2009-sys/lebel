@@ -1,0 +1,98 @@
+[
+  {
+    "file": "Bracelet.prn",
+    "titles": [
+      "TEXT 757,392,\"0\",180,9,10,\"Bangle_Bracelet_Armlet\"",
+      "TEXT 336,392,\"0\",180,9,10,\"Bangle_Bracelet_Armlet\"",
+      "TEXT 757,392,\"0\",180,9,10,\"Bangle_Bracelet_Armlet\""
+    ],
+    "barcodes": [
+      "BARCODE 802,80,\"93\",42,0,180,2,4,\"BBAH7Z9TUZUS5VNV\"",
+      "BARCODE 381,80,\"93\",42,0,180,2,4,\"BBAH7Z9TUZUS5VNV\"",
+      "BARCODE 802,80,\"93\",42,0,180,2,4,\"BBAH7Z9TUZUS5VNV\""
+    ]
+  },
+  {
+    "file": "flipkart car hanger prn.prn",
+    "titles": [
+      "TEXT 755,393,\"0\",180,9,10,\"Car_Hanging_Ornament\"",
+      "TEXT 334,393,\"0\",180,9,10,\"Car_Hanging_Ornament\""
+    ],
+    "barcodes": [
+      "BARCODE 802,80,\"93\",42,0,180,2,4,\"CHGGZD4DNHPCRS5N\"",
+      "BARCODE 381,80,\"93\",42,0,180,2,4,\"CHGGZD4DNHPCRS5N\""
+    ]
+  },
+  {
+    "file": "flipkart earring prn.prn",
+    "titles": [
+      "TEXT 661,392,\"0\",180,9,10,\"Earring\"",
+      "TEXT 240,392,\"0\",180,9,10,\"Earring\"",
+      "TEXT 661,392,\"0\",180,9,10,\"Earring\""
+    ],
+    "barcodes": [
+      "BARCODE 802,80,\"93\",42,0,180,2,4,\"ERGGXEBNCKHXBW2K\"",
+      "BARCODE 381,80,\"93\",42,0,180,2,4,\"ERGGXEBNCKHXBW2K\"",
+      "BARCODE 802,80,\"93\",42,0,180,2,4,\"ERGGXEBNCKHXBW2K\""
+    ]
+  },
+  {
+    "file": "flipkart jewellery set prn.prn",
+    "titles": [
+      "TEXT 695,372,\"0\",180,9,10,\"Jewellery Set\"",
+      "TEXT 274,372,\"0\",180,9,10,\"Jewellery Set\""
+    ],
+    "barcodes": [
+      "BARCODE 802,74,\"93\",42,0,180,2,4,\"JWSGA7U9KHSEJ29G\"",
+      "BARCODE 381,74,\"93\",42,0,180,2,4,\"JWSGA7U9KHSEJ29G\""
+    ]
+  },
+  {
+    "file": "flipkart keychain prn.prn",
+    "titles": [
+      "TEXT 674,386,\"0\",180,9,10,\"key chain\"",
+      "TEXT 253,386,\"0\",180,9,10,\"key chain\"",
+      "TEXT 674,386,\"0\",180,9,10,\"key chain\""
+    ],
+    "barcodes": [
+      "BARCODE 802,80,\"93\",42,0,180,2,4,\"KECH2FRZACRDQNZ3\"",
+      "BARCODE 381,80,\"93\",42,0,180,2,4,\"KECH2FRZACRDQNZ3\"",
+      "BARCODE 802,80,\"93\",42,0,180,2,4,\"KECH2FRZACRDQNZ3\""
+    ]
+  },
+  {
+    "file": "flipkart necklace chain prn.prn",
+    "titles": [
+      "TEXT 708,386,\"0\",180,9,10,\"Necklace Chain\"",
+      "TEXT 287,386,\"0\",180,9,10,\"Necklace Chain\"",
+      "TEXT 708,386,\"0\",180,9,10,\"Necklace Chain\""
+    ],
+    "barcodes": [
+      "BARCODE 802,80,\"93\",42,0,180,2,4,\"NKCGNZFRB6BWHXHH\"",
+      "BARCODE 381,80,\"93\",42,0,180,2,4,\"NKCGNZFRB6BWHXHH\"",
+      "BARCODE 802,80,\"93\",42,0,180,2,4,\"NKCGNZFRB6BWHXHH\""
+    ]
+  },
+  {
+    "file": "flipkart pendant prn.prn",
+    "titles": [
+      "TEXT 707,392,\"0\",180,9,10,\"Pendant Locket\"",
+      "TEXT 286,392,\"0\",180,9,10,\"Pendant Locket\""
+    ],
+    "barcodes": [
+      "BARCODE 802,74,\"93\",42,0,180,2,4,\"PELH8YH3ZQZZHR77\"",
+      "BARCODE 381,74,\"93\",42,0,180,2,4,\"PELH8YH3ZQZZHR77\""
+    ]
+  },
+  {
+    "file": "flipkart ring prn.prn",
+    "titles": [
+      "TEXT 647,387,\"0\",180,9,10,\"Ring\"",
+      "TEXT 226,387,\"0\",180,9,10,\"Ring\""
+    ],
+    "barcodes": [
+      "BARCODE 802,74,\"93\",42,0,180,2,4,\"RNGGNJPMVGENCVHY\"",
+      "BARCODE 381,74,\"93\",42,0,180,2,4,\"RNGGNJPMVGENCVHY\""
+    ]
+  }
+]

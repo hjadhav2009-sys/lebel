@@ -1,0 +1,35 @@
+PRN Mapping Document - Tool 2
+
+Source data usually comes from Excel/CSV columns.
+Tool 2 maps those values into BarTender-style TSPL commands.
+
+Common mappings:
+Product title / format title -> top heading
+Body Material -> Body Material line
+Plating -> Plating line
+Brand Color -> Brand Color line
+Model Number / Product name -> Model Number lines
+Brand -> Brand line
+Net Quantity -> Net Quantity line
+Dimensions -> Dimensions line
+MRP -> MRP line
+Generic Name -> Generic Name line
+Manufacturing month/year -> Month & Year line
+Seller / manufacturer block -> branch settings
+Barcode value -> FSN / EAN / LID / selected barcode column
+
+Real printer command example:
+TEXT 779,351,"ROMAN.TTF",180,1,5,"Brand              : M Men Style"
+BARCODE 754,79,"39",37,0,180,1,3,"BBAESYDJKGJEUCXY"
+
+The barcode command means:
+BARCODE x,y,"39",height,humanReadable,rotation,narrow,wide,"value"
+
+In your working file:
+Barcode type = Code 39
+Height = 37 dots
+Rotation = 180
+Narrow bar = 1 dot
+Wide bar = 3 dots
+
+This is why Tool 2 PRN should scan better than PDF.
