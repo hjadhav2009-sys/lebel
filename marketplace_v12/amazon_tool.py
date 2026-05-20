@@ -37,12 +37,12 @@ LOG_DIR = runtime_paths.logs_dir()
 LOG_FILE = LOG_DIR / "debug_log.txt"
 LOCAL_OUT_DIR = BASE_DIR / "outputs"
 
-DEFAULT_AMAZON_BRANCH = {
-    "name": "Amazon Branch",
+AMAZON_RUNTIME_VERSION = runtime_paths.AMAZON_RUNTIME_VERSION
+
+DEFAULT_AMAZON_ADDRESS = {
     "marketed_by": "Sujal Fashion Works",
-    "address_line1": "Shop No F-10, Amranate, Sec-09E",
-    "address_line2": "Kalamboli",
-    "city_state": "Navi Mumbai, Maharashtra",
+    "address_line1": "Shop No F-10, Amranate, Sec-09E, Kalamboli",
+    "address_line2": "Navi Mumbai, Maharashtra",
     "email": "Sujalfashionworks@gmail.com",
     "phone": "+91-9594790929",
     "origin": "India",
@@ -85,69 +85,85 @@ def printer_settings_path():
     return BASE_DIR / "data" / "amazon_printer_settings.json"
 
 
-def amazon_branches_path():
-    return runtime_paths.settings_dir() / "amazon_branches.json"
+def amazon_address_path():
+    return runtime_paths.amazon_address_path()
 
 
-def normalize_amazon_branch(branch):
-    branch = dict(branch or {})
-    address = amazon_rules.clean_text(branch.get("address", ""))
-    if address and not amazon_rules.clean_text(branch.get("address_line1", "")):
-        branch["address_line1"] = address
+def normalize_amazon_address(address):
+    address = dict(address or {})
+    legacy_address = amazon_rules.clean_text(address.get("address", ""))
+    if legacy_address and not amazon_rules.clean_text(address.get("address_line1", "")):
+        address["address_line1"] = legacy_address
     clean = {}
-    for key, value in DEFAULT_AMAZON_BRANCH.items():
-        clean[key] = amazon_rules.clean_text(branch.get(key, value))
-    clean["name"] = clean.get("name") or DEFAULT_AMAZON_BRANCH["name"]
+    for key, value in DEFAULT_AMAZON_ADDRESS.items():
+        clean[key] = amazon_rules.clean_text(address.get(key, value))
+    clean["company"] = clean["marketed_by"]
+    clean["city_state"] = ""
     clean["address"] = " ".join(
         [
             clean.get("address_line1", ""),
             clean.get("address_line2", ""),
-            clean.get("city_state", ""),
         ]
     ).strip()
     return clean
 
 
-def load_amazon_branch_settings(seed_branch=None):
-    path = amazon_branches_path()
+def save_amazon_address(address):
+    path = amazon_address_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    clean = normalize_amazon_address(address)
+    path.write_text(json.dumps(clean, ensure_ascii=False, indent=2), encoding="utf-8")
+    return clean
+
+
+def load_amazon_address():
+    path = amazon_address_path()
     try:
         if path.exists():
             data = json.loads(path.read_text(encoding="utf-8"))
-            if isinstance(data, dict) and isinstance(data.get("branches"), dict):
-                branches = {
-                    name: normalize_amazon_branch(dict(value, name=name))
-                    for name, value in data.get("branches", {}).items()
-                    if amazon_rules.clean_text(name)
-                }
-                if branches:
-                    default_branch = amazon_rules.clean_text(data.get("default_branch", "")) or next(iter(branches))
-                    return {"default_branch": default_branch if default_branch in branches else next(iter(branches)), "branches": branches}
+            if isinstance(data, dict):
+                return normalize_amazon_address(data)
+    except Exception:
+        log_error(traceback.format_exc())
+    return save_amazon_address(DEFAULT_AMAZON_ADDRESS)
+
+
+def migrate_amazon_runtime_to_v31():
+    runtime_paths.ensure_runtime_folders()
+    settings = runtime_paths.load_app_settings()
+    if settings.get("amazon_runtime_version") == AMAZON_RUNTIME_VERSION:
+        if not amazon_address_path().exists():
+            save_amazon_address(DEFAULT_AMAZON_ADDRESS)
+        return settings
+
+    backup_path = ""
+    try:
+        backup_path = runtime_paths.backup_amazon_template_cache(time.strftime("%Y%m%d_%H%M%S"))
     except Exception:
         log_error(traceback.format_exc())
 
-    seed = normalize_amazon_branch(seed_branch or DEFAULT_AMAZON_BRANCH)
-    name = seed.get("name") or DEFAULT_AMAZON_BRANCH["name"]
-    data = {"default_branch": name, "branches": {name: seed}}
-    save_amazon_branch_settings(data)
-    return data
+    if not amazon_address_path().exists():
+        save_amazon_address(DEFAULT_AMAZON_ADDRESS)
 
+    try:
+        mapping = amazon_rules.load_mapping_settings()
+        mapping["prn_mode"] = amazon_prn_renderer.PRN_MODE_DYNAMIC
+        mapping["template_subtype"] = amazon_prn_renderer.TEMPLATE_SUBTYPE_BLANK
+        mapping["template_layout"] = amazon_prn_renderer.TEMPLATE_LAYOUT_DYNAMIC
+        amazon_rules.save_mapping_settings(mapping)
+    except Exception:
+        log_error(traceback.format_exc())
 
-def save_amazon_branch_settings(data):
-    path = amazon_branches_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    branches = {}
-    for name, branch in (data.get("branches") or {}).items():
-        normalized = normalize_amazon_branch(dict(branch or {}, name=name))
-        branches[normalized["name"]] = normalized
-    if not branches:
-        default = normalize_amazon_branch(DEFAULT_AMAZON_BRANCH)
-        branches[default["name"]] = default
-    default_branch = amazon_rules.clean_text(data.get("default_branch", ""))
-    if default_branch not in branches:
-        default_branch = next(iter(branches))
-    clean = {"default_branch": default_branch, "branches": branches}
-    path.write_text(json.dumps(clean, ensure_ascii=False, indent=2), encoding="utf-8")
-    return clean
+    settings.update(
+        {
+            "amazon_runtime_version": AMAZON_RUNTIME_VERSION,
+            "amazon_prn_mode": amazon_prn_renderer.PRN_MODE_DYNAMIC,
+            "show_advanced_template_modes": False,
+        }
+    )
+    if backup_path:
+        settings["amazon_template_backup"] = backup_path
+    return runtime_paths.save_app_settings(settings)
 
 
 class AmazonLabelFrame(ttk.Frame):
@@ -157,12 +173,12 @@ class AmazonLabelFrame(ttk.Frame):
         super().__init__(master)
         self.branches_provider = branches_provider or (lambda: {})
         self.current_branch_provider = current_branch_provider or (lambda: None)
-        self.resource_info = amazon_prn_renderer.ensure_default_resources_installed()
+        self.runtime_settings = migrate_amazon_runtime_to_v31()
 
         self.mapping = amazon_rules.load_mapping_settings()
         self.category_rules = amazon_rules.load_category_rules()
         self.brand_rules = amazon_rules.load_brand_rules()
-        self.amazon_branch_data = load_amazon_branch_settings(self.initial_amazon_branch_seed())
+        self.amazon_address = load_amazon_address()
 
         self.master_data = None
         self.consignment_data = None
@@ -181,18 +197,16 @@ class AmazonLabelFrame(ttk.Frame):
         self.status_var = tk.StringVar(value="Amazon Labels ready")
         self.master_status_var = tk.StringVar(value="Master Listing: not loaded")
         self.consignment_status_var = tk.StringVar(value="Consignment File: not loaded")
-        self.branch_var = tk.StringVar(value=self.mapping.get("selected_branch", ""))
         self.layout_var = tk.StringVar(value=amazon_label_renderer.normalize_pdf_layout(self.mapping.get("pdf_layout", amazon_label_renderer.PDF_LAYOUT_BARTENDER)))
         initial_mode, initial_subtype, initial_layout = self.initial_prn_selection()
         self.prn_mode_var = tk.StringVar(value=amazon_prn_renderer.prn_option_for(initial_mode, initial_subtype))
         self.template_layout_var = tk.StringVar(value=initial_layout)
+        self.advanced_template_var = tk.BooleanVar(value=bool(self.runtime_settings.get("show_advanced_template_modes", False)))
         self.output_root_var = tk.StringVar(value=str(runtime_paths.output_root()))
         self.amazon_setting_vars = {
-            "name": tk.StringVar(),
             "marketed_by": tk.StringVar(),
             "address_line1": tk.StringVar(),
             "address_line2": tk.StringVar(),
-            "city_state": tk.StringVar(),
             "email": tk.StringVar(),
             "phone": tk.StringVar(),
             "origin": tk.StringVar(),
@@ -200,9 +214,8 @@ class AmazonLabelFrame(ttk.Frame):
         self.qty_var = tk.StringVar(value="1")
 
         self.build_ui()
-        self.refresh_branch_list()
-        self.load_amazon_branch_form()
-        self.update_template_status()
+        self.load_amazon_address_form()
+        self.refresh_prn_mode_controls()
         self.show_empty_preview()
 
     # ---------------- UI ----------------
@@ -236,6 +249,8 @@ class AmazonLabelFrame(ttk.Frame):
         self.prn_btn.pack(side="left", padx=3)
         self.prn_print_btn = ttk.Button(output_row, text="Generate PRN & Print", command=self.generate_amazon_prn_and_print_clicked)
         self.prn_print_btn.pack(side="left", padx=3)
+        self.test_print_btn = ttk.Button(output_row, text="Test Print 1 Row", command=self.test_print_1row_clicked)
+        self.test_print_btn.pack(side="left", padx=3)
         ttk.Button(output_row, text="Select Printer", command=self.select_printer_dialog).pack(side="left", padx=3)
         ttk.Button(output_row, text="Print Last PRN", command=self.print_last_prn).pack(side="left", padx=3)
 
@@ -248,16 +263,12 @@ class AmazonLabelFrame(ttk.Frame):
         ttk.Button(output_more_row, text="Open PDF", command=self.open_last_pdf).pack(side="left", padx=3)
         ttk.Button(output_more_row, text="Open Output Folder", command=self.open_output_folder).pack(side="left", padx=3)
 
-        branch_row = ttk.Frame(toolbar)
-        branch_row.pack(fill="x", pady=2)
-        ttk.Label(branch_row, text="4) Branch / Layout:").pack(side="left", padx=(0, 4))
-        self.branch_combo = ttk.Combobox(branch_row, textvariable=self.branch_var, state="readonly", width=30)
-        self.branch_combo.pack(side="left", padx=3)
-        self.branch_combo.bind("<<ComboboxSelected>>", self.on_branch_selected)
-        self.branch_combo.bind("<Button-1>", lambda _event: self.refresh_branch_list())
-        ttk.Label(branch_row, text="PDF Layout:").pack(side="left", padx=(14, 4))
+        layout_row = ttk.Frame(toolbar)
+        layout_row.pack(fill="x", pady=2)
+        ttk.Label(layout_row, text="4) Layout / PRN:").pack(side="left", padx=(0, 4))
+        ttk.Label(layout_row, text="PDF Layout:").pack(side="left", padx=(0, 4))
         self.layout_combo = ttk.Combobox(
-            branch_row,
+            layout_row,
             textvariable=self.layout_var,
             state="readonly",
             width=28,
@@ -265,26 +276,40 @@ class AmazonLabelFrame(ttk.Frame):
         )
         self.layout_combo.pack(side="left", padx=3)
         self.layout_combo.bind("<<ComboboxSelected>>", self.on_layout_selected)
-        ttk.Label(branch_row, text="PRN Mode:").pack(side="left", padx=(14, 4))
+        ttk.Label(layout_row, text="PRN Mode:").pack(side="left", padx=(14, 4))
         self.prn_mode_combo = ttk.Combobox(
-            branch_row,
+            layout_row,
             textvariable=self.prn_mode_var,
             state="readonly",
             width=24,
-            values=amazon_prn_renderer.PRN_MODE_VALUES,
+            values=[amazon_prn_renderer.PRN_OPTION_DYNAMIC],
         )
         self.prn_mode_combo.pack(side="left", padx=3)
         self.prn_mode_combo.bind("<<ComboboxSelected>>", self.on_prn_mode_selected)
-        ttk.Label(branch_row, text="Template Layout:").pack(side="left", padx=(14, 4))
+        self.advanced_template_check = ttk.Checkbutton(
+            layout_row,
+            text="Show Advanced Template Modes",
+            variable=self.advanced_template_var,
+            command=self.on_advanced_template_toggled,
+        )
+        self.advanced_template_check.pack(side="left", padx=(14, 4))
+        self.template_layout_label = ttk.Label(layout_row, text="Template Layout:")
         self.template_layout_combo = ttk.Combobox(
-            branch_row,
+            layout_row,
             textvariable=self.template_layout_var,
             state="readonly",
             width=32,
             values=amazon_prn_renderer.TEMPLATE_LAYOUT_VALUES,
         )
-        self.template_layout_combo.pack(side="left", padx=3)
         self.template_layout_combo.bind("<<ComboboxSelected>>", self.on_template_layout_selected)
+
+        warning_row = ttk.Frame(toolbar)
+        warning_row.pack(fill="x", pady=(2, 0))
+        ttk.Label(
+            warning_row,
+            text="For Amazon 2-up roll, set TSC stock to 4 x 2 inch / 101.6mm x 50.8mm. Do not use 2 x 4.",
+            foreground="#8a4b00",
+        ).pack(anchor="w")
 
         status_box = ttk.Frame(self)
         status_box.pack(fill="x", padx=8, pady=(0, 4))
@@ -298,6 +323,30 @@ class AmazonLabelFrame(ttk.Frame):
         right = ttk.Frame(body)
         body.add(left, weight=3)
         body.add(right, weight=2)
+
+        settings = ttk.LabelFrame(left, text="Amazon Address Settings")
+        settings.pack(fill="x", pady=(0, 6))
+        form = ttk.Frame(settings)
+        form.pack(fill="x", padx=6, pady=5)
+        fields = [
+            ("Manufactured by / Marketed by", "marketed_by"),
+            ("Address line 1", "address_line1"),
+            ("Address line 2", "address_line2"),
+            ("Email", "email"),
+            ("Phone", "phone"),
+            ("Origin", "origin"),
+        ]
+        for index, (label, key) in enumerate(fields):
+            row = index // 2
+            col = (index % 2) * 2
+            ttk.Label(form, text=label).grid(row=row, column=col, sticky="w", padx=(0, 4), pady=2)
+            ttk.Entry(form, textvariable=self.amazon_setting_vars[key], width=34).grid(row=row, column=col + 1, sticky="ew", padx=(0, 10), pady=2)
+        form.columnconfigure(1, weight=1)
+        form.columnconfigure(3, weight=1)
+        buttons = ttk.Frame(settings)
+        buttons.pack(fill="x", padx=6, pady=(0, 5))
+        ttk.Button(buttons, text="Save Amazon Address", command=self.save_amazon_address_clicked).pack(side="left", padx=3)
+        ttk.Button(buttons, text="Reset Amazon Address to Default", command=self.reset_amazon_address_clicked).pack(side="left", padx=3)
 
         ttk.Label(left, text="Amazon Validation").pack(anchor="w")
         table_frame = ttk.Frame(left)
@@ -349,34 +398,6 @@ class AmazonLabelFrame(ttk.Frame):
         ttk.Entry(qtybar, textvariable=self.qty_var, width=8).pack(side="left", padx=5)
         ttk.Button(qtybar, text="Apply Qty to Selected SKU", command=self.apply_qty_to_selected).pack(side="left", padx=4)
 
-        settings = ttk.LabelFrame(left, text="Amazon Address Settings")
-        settings.pack(fill="x", pady=(4, 0))
-        form = ttk.Frame(settings)
-        form.pack(fill="x", padx=6, pady=5)
-        fields = [
-            ("Branch Name", "name"),
-            ("Manufactured by / Marketed by", "marketed_by"),
-            ("Address line 1", "address_line1"),
-            ("Address line 2", "address_line2"),
-            ("City/State", "city_state"),
-            ("Email", "email"),
-            ("Phone", "phone"),
-            ("Origin text", "origin"),
-        ]
-        for index, (label, key) in enumerate(fields):
-            row = index // 2
-            col = (index % 2) * 2
-            ttk.Label(form, text=label).grid(row=row, column=col, sticky="w", padx=(0, 4), pady=2)
-            ttk.Entry(form, textvariable=self.amazon_setting_vars[key], width=34).grid(row=row, column=col + 1, sticky="ew", padx=(0, 10), pady=2)
-        form.columnconfigure(1, weight=1)
-        form.columnconfigure(3, weight=1)
-        buttons = ttk.Frame(settings)
-        buttons.pack(fill="x", padx=6, pady=(0, 5))
-        ttk.Button(buttons, text="Add Amazon Branch", command=self.add_amazon_branch).pack(side="left", padx=3)
-        ttk.Button(buttons, text="Save Amazon Branch", command=self.save_amazon_branch).pack(side="left", padx=3)
-        ttk.Button(buttons, text="Delete Amazon Branch", command=self.delete_amazon_branch).pack(side="left", padx=3)
-        ttk.Button(buttons, text="Set Default Amazon Branch", command=self.set_default_amazon_branch).pack(side="left", padx=3)
-
         output_settings = ttk.LabelFrame(left, text="Output Folder Location")
         output_settings.pack(fill="x", pady=(4, 0))
         out_row = ttk.Frame(output_settings)
@@ -391,63 +412,18 @@ class AmazonLabelFrame(ttk.Frame):
         self.preview.pack(fill="both", expand=True, padx=6, pady=6)
         self.preview.bind("<Configure>", lambda _event: self.preview_selected(silent=True))
 
-    def initial_amazon_branch_seed(self):
-        try:
-            seed = self.current_branch_provider()
-            if seed:
-                return dict(seed)
-        except Exception:
-            log_error(traceback.format_exc())
-        return DEFAULT_AMAZON_BRANCH
-
     def initial_prn_selection(self):
-        validation = amazon_prn_renderer.validate_amazon_template(amazon_prn_renderer.default_amazon_template_path())
-        if not amazon_prn_renderer.template_validation_is_usable(validation):
-            return amazon_prn_renderer.PRN_MODE_DYNAMIC, amazon_prn_renderer.TEMPLATE_SUBTYPE_BLANK, amazon_prn_renderer.TEMPLATE_LAYOUT_DYNAMIC
-        mode = amazon_prn_renderer.normalize_prn_mode(self.mapping.get("prn_mode", amazon_prn_renderer.PRN_MODE_TEMPLATE))
-        subtype = amazon_prn_renderer.normalize_template_subtype(self.mapping.get("template_subtype", ""))
-        if "prn_mode" not in self.mapping:
-            subtype = amazon_prn_renderer.TEMPLATE_SUBTYPE_CAPTION if validation.get("has_captions") else amazon_prn_renderer.TEMPLATE_SUBTYPE_BLANK
-        layout = amazon_rules.clean_text(self.mapping.get("template_layout", "")) or validation.get("suggested_layout") or amazon_prn_renderer.TEMPLATE_LAYOUT_2UP_BLANK
-        if layout == amazon_prn_renderer.TEMPLATE_LAYOUT_DYNAMIC:
-            mode = amazon_prn_renderer.PRN_MODE_DYNAMIC
-        elif layout not in amazon_prn_renderer.TEMPLATE_LAYOUT_VALUES:
-            layout = validation.get("suggested_layout") or amazon_prn_renderer.TEMPLATE_LAYOUT_2UP_BLANK
-        if validation.get("has_captions") and not self.mapping.get("template_subtype"):
-            subtype = amazon_prn_renderer.TEMPLATE_SUBTYPE_CAPTION
-        return mode, subtype, layout
+        return (
+            amazon_prn_renderer.PRN_MODE_DYNAMIC,
+            amazon_prn_renderer.TEMPLATE_SUBTYPE_BLANK,
+            amazon_prn_renderer.TEMPLATE_LAYOUT_DYNAMIC,
+        )
 
     def refresh_branch_list(self):
-        names = list(self.branches().keys())
-        self.branch_combo["values"] = names
-        if names and self.branch_var.get() not in names:
-            configured = self.mapping.get("selected_branch", "")
-            default_branch = self.amazon_branch_data.get("default_branch", "")
-            self.branch_var.set(configured if configured in names else (default_branch if default_branch in names else names[0]))
-        if names and not self.branch_var.get():
-            self.branch_var.set(names[0])
-
-    def branches(self):
-        return dict(self.amazon_branch_data.get("branches") or {})
+        return None
 
     def current_branch(self):
-        branches = self.branches()
-        name = self.branch_var.get()
-        if name in branches:
-            return dict(branches.get(name) or {})
-        if branches:
-            return dict(next(iter(branches.values())))
-        return {}
-
-    def on_branch_selected(self, _event=None):
-        self.mapping["selected_branch"] = self.branch_var.get()
-        try:
-            amazon_rules.save_mapping_settings(self.mapping)
-        except Exception:
-            log_error(traceback.format_exc())
-        self.load_amazon_branch_form()
-        if self.consignment_df is not None:
-            self.rebuild_amazon_rows()
+        return dict(self.amazon_address)
 
     def selected_pdf_layout(self):
         layout = amazon_label_renderer.normalize_pdf_layout(self.layout_var.get())
@@ -456,6 +432,8 @@ class AmazonLabelFrame(ttk.Frame):
         return layout
 
     def selected_prn_mode(self):
+        if not self.advanced_template_var.get():
+            return amazon_prn_renderer.PRN_MODE_DYNAMIC, amazon_prn_renderer.TEMPLATE_SUBTYPE_BLANK
         mode, subtype = amazon_prn_renderer.mode_from_prn_option(self.prn_mode_var.get())
         return mode, subtype
 
@@ -479,7 +457,7 @@ class AmazonLabelFrame(ttk.Frame):
             amazon_rules.save_mapping_settings(self.mapping)
         except Exception:
             log_error(traceback.format_exc())
-        self.update_template_status()
+        self.refresh_prn_mode_controls()
         self.set_status(f"Amazon PRN mode set to: {self.prn_mode_var.get()}")
 
     def on_template_layout_selected(self, _event=None):
@@ -501,10 +479,13 @@ class AmazonLabelFrame(ttk.Frame):
             amazon_rules.save_mapping_settings(self.mapping)
         except Exception:
             log_error(traceback.format_exc())
-        self.update_template_status()
+        self.refresh_prn_mode_controls()
         self.set_status(f"Amazon template layout set to: {layout}")
 
     def update_template_status(self):
+        if not self.advanced_template_var.get():
+            self.set_status("Amazon Dynamic TSPL No Bitmap is active for production printing.")
+            return {}
         validation = amazon_prn_renderer.validate_amazon_template(amazon_prn_renderer.default_amazon_template_path())
         if amazon_prn_renderer.template_validation_is_usable(validation):
             detail = validation.get("size_line") or "SIZE unknown"
@@ -514,87 +495,67 @@ class AmazonLabelFrame(ttk.Frame):
             self.set_status("Amazon template validation failed. Dynamic TSPL is available.")
         return validation
 
-    def load_amazon_branch_form(self):
+    def refresh_prn_mode_controls(self):
+        advanced = bool(self.advanced_template_var.get())
+        if advanced:
+            self.prn_mode_combo["values"] = amazon_prn_renderer.PRN_MODE_VALUES
+            self.template_layout_label.pack(side="left", padx=(14, 4))
+            self.template_layout_combo.pack(side="left", padx=3)
+        else:
+            self.prn_mode_combo["values"] = [amazon_prn_renderer.PRN_OPTION_DYNAMIC]
+            self.prn_mode_var.set(amazon_prn_renderer.PRN_OPTION_DYNAMIC)
+            self.template_layout_var.set(amazon_prn_renderer.TEMPLATE_LAYOUT_DYNAMIC)
+            self.template_layout_combo.pack_forget()
+            self.template_layout_label.pack_forget()
+            self.mapping["prn_mode"] = amazon_prn_renderer.PRN_MODE_DYNAMIC
+            self.mapping["template_subtype"] = amazon_prn_renderer.TEMPLATE_SUBTYPE_BLANK
+            self.mapping["template_layout"] = amazon_prn_renderer.TEMPLATE_LAYOUT_DYNAMIC
+            try:
+                amazon_rules.save_mapping_settings(self.mapping)
+            except Exception:
+                log_error(traceback.format_exc())
+        return advanced
+
+    def on_advanced_template_toggled(self):
+        advanced = self.refresh_prn_mode_controls()
+        try:
+            runtime_paths.save_app_settings({"show_advanced_template_modes": advanced})
+        except Exception:
+            log_error(traceback.format_exc())
+        if advanced:
+            messagebox.showwarning(
+                "Advanced template modes",
+                "Template mode can double-print if the PRN contains burned text. Dynamic TSPL is recommended for production.",
+            )
+            self.update_template_status()
+        else:
+            self.set_status("Advanced template modes hidden. Amazon production PRN uses Dynamic TSPL No Bitmap.")
+
+    def load_amazon_address_form(self):
         branch = self.current_branch()
         for key, var in self.amazon_setting_vars.items():
             var.set(amazon_rules.clean_text(branch.get(key, "")))
 
-    def _branch_from_form(self):
+    def _address_from_form(self):
         data = {key: var.get().strip() for key, var in self.amazon_setting_vars.items()}
-        return normalize_amazon_branch(data)
+        return normalize_amazon_address(data)
 
-    def add_amazon_branch(self):
-        branches = self.branches()
-        index = len(branches) + 1
-        name = f"Amazon Branch {index}"
-        while name in branches:
-            index += 1
-            name = f"Amazon Branch {index}"
-        branch = normalize_amazon_branch(dict(DEFAULT_AMAZON_BRANCH, name=name))
-        self.amazon_branch_data["branches"][name] = branch
-        self.branch_var.set(name)
-        self.amazon_branch_data["default_branch"] = name
-        self.amazon_branch_data = save_amazon_branch_settings(self.amazon_branch_data)
-        self.refresh_branch_list()
-        self.load_amazon_branch_form()
-        self.set_status(f"Amazon branch added: {name}")
-
-    def save_amazon_branch(self):
-        branch = self._branch_from_form()
-        name = branch.get("name")
-        if not name:
-            messagebox.showwarning("Branch name required", "Enter an Amazon branch name.")
-            return
-        old_name = self.branch_var.get()
-        if old_name and old_name != name:
-            self.amazon_branch_data["branches"].pop(old_name, None)
-        self.amazon_branch_data["branches"][name] = branch
-        self.branch_var.set(name)
-        if not self.amazon_branch_data.get("default_branch"):
-            self.amazon_branch_data["default_branch"] = name
-        self.amazon_branch_data = save_amazon_branch_settings(self.amazon_branch_data)
-        self.mapping["selected_branch"] = name
-        try:
-            amazon_rules.save_mapping_settings(self.mapping)
-        except Exception:
-            log_error(traceback.format_exc())
-        self.refresh_branch_list()
+    def save_amazon_address_clicked(self):
+        self.amazon_address = save_amazon_address(self._address_from_form())
+        self.load_amazon_address_form()
         if self.consignment_df is not None:
             self.rebuild_amazon_rows()
-        self.set_status(f"Amazon branch saved: {name}")
+        self.preview_selected(silent=True)
+        self.set_status("Amazon address saved. New Amazon labels will use this address.")
+        messagebox.showinfo("Amazon address saved", "Amazon address saved. New Amazon labels will use this address.")
 
-    def delete_amazon_branch(self):
-        branches = self.branches()
-        name = self.branch_var.get()
-        if len(branches) <= 1:
-            messagebox.showwarning("Cannot delete", "At least one Amazon branch is required.")
-            return
-        if not name or name not in branches:
-            return
-        if not messagebox.askyesno("Delete Amazon branch", f"Delete Amazon branch '{name}'?"):
-            return
-        self.amazon_branch_data["branches"].pop(name, None)
-        self.amazon_branch_data["default_branch"] = next(iter(self.amazon_branch_data["branches"]))
-        self.branch_var.set(self.amazon_branch_data["default_branch"])
-        self.amazon_branch_data = save_amazon_branch_settings(self.amazon_branch_data)
-        self.refresh_branch_list()
-        self.load_amazon_branch_form()
+    def reset_amazon_address_clicked(self):
+        self.amazon_address = save_amazon_address(DEFAULT_AMAZON_ADDRESS)
+        self.load_amazon_address_form()
         if self.consignment_df is not None:
             self.rebuild_amazon_rows()
-        self.set_status(f"Amazon branch deleted: {name}")
-
-    def set_default_amazon_branch(self):
-        name = self.branch_var.get()
-        if not name:
-            return
-        self.amazon_branch_data["default_branch"] = name
-        self.amazon_branch_data = save_amazon_branch_settings(self.amazon_branch_data)
-        self.mapping["selected_branch"] = name
-        try:
-            amazon_rules.save_mapping_settings(self.mapping)
-        except Exception:
-            log_error(traceback.format_exc())
-        self.set_status(f"Default Amazon branch set: {name}")
+        self.preview_selected(silent=True)
+        self.set_status("Amazon address reset to default. New Amazon labels will use this address.")
 
     def browse_output_root(self):
         path = filedialog.askdirectory(title="Select output folder", initialdir=self.output_root_var.get() or str(runtime_paths.desktop_dir()))
@@ -909,7 +870,7 @@ class AmazonLabelFrame(ttk.Frame):
         ttk.Button(right, text="Apply MRP for this print", command=lambda: apply_mrp()).pack(anchor="w", pady=(0, 12))
         ttk.Label(
             right,
-            text="Amazon branch/address errors must be fixed in Amazon Address Settings.",
+            text="Amazon address errors must be fixed in Amazon Address Settings.",
             wraplength=340,
             justify="left",
         ).pack(anchor="w", pady=(10, 0))
@@ -1100,6 +1061,44 @@ class AmazonLabelFrame(ttk.Frame):
     def generate_amazon_prn_and_print_clicked(self):
         self.start_amazon_prn_generation(print_after=True)
 
+    def test_print_1row_clicked(self):
+        row = self.selected_row()
+        if not row:
+            messagebox.showwarning("No selection", "Select one Amazon row for the test print.")
+            return
+        selected_key = row.get("row_key")
+        self.rebuild_amazon_rows()
+        row = next((candidate for candidate in self.amazon_rows if candidate.get("row_key") == selected_key), None)
+        if not row:
+            messagebox.showwarning("No selection", "Select one Amazon row for the test print.")
+            return
+        if row.get("errors"):
+            messagebox.showwarning(
+                "Amazon row has errors",
+                "Fix this selected Amazon row before running Test Print 1 Row.\n\n" + "; ".join(row.get("errors", [])),
+            )
+            return
+
+        row_snapshot = copy.deepcopy(row)
+        row_snapshot["print_qty"] = 2
+        branch = copy.deepcopy(self.current_branch())
+        stamp = time.strftime("%Y%m%d_%H%M%S")
+        out = output_dir() / f"amazon_test_1row_{stamp}.prn"
+
+        def worker():
+            generated = amazon_prn_renderer.generate_amazon_prn(out, [row_snapshot], branch)
+            return generated, str(out)
+
+        def done(result):
+            generated, prn_path = result
+            self.last_prn = prn_path
+            self.record_amazon_output("PRN Test 1 Row", prn_path, "", generated)
+            self.set_status(f"Amazon test PRN generated: {generated} labels -> {prn_path}")
+            if messagebox.askyesno("Print now?", f"Amazon test PRN created with exactly {generated} labels.\n\nPrint now?"):
+                self.print_last_prn_direct()
+
+        self.run_background([self.test_print_btn], "Generating Amazon Dynamic TSPL test row...", worker, done)
+
     def start_amazon_prn_generation(self, print_after=False):
         prepared = self.prepare_generation("PRN")
         if not prepared:
@@ -1108,8 +1107,12 @@ class AmazonLabelFrame(ttk.Frame):
         prn_mode, template_subtype = self.selected_prn_mode()
         template_layout = self.template_layout_var.get()
         template_path = amazon_prn_renderer.default_amazon_template_path()
-        validation = amazon_prn_renderer.validate_amazon_template(template_path)
         if prn_mode == amazon_prn_renderer.PRN_MODE_TEMPLATE:
+            messagebox.showwarning(
+                "Advanced template mode",
+                "Template mode can double-print if the PRN contains burned text. Dynamic TSPL is recommended for production.",
+            )
+            validation = amazon_prn_renderer.validate_amazon_template(template_path)
             if not amazon_prn_renderer.template_validation_is_usable(validation):
                 msg = "\n".join(validation.get("warnings") or [amazon_prn_renderer.AMAZON_TEMPLATE_MISSING_MESSAGE])
                 messagebox.showwarning("Amazon template validation", msg + "\n\nUsing Dynamic TSPL No Bitmap for this generation.")

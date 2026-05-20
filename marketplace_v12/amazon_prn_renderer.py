@@ -32,8 +32,8 @@ except ImportError:
 
 BASE_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 AMAZON_TEMPLATE_MISSING_MESSAGE = (
-    "Amazon BarTender template PRN missing. The app will try to install "
-    "amazon_template.prn into %APPDATA%/MMS_Label_Tools/templates/amazon/."
+    "Amazon BarTender template PRN missing. Dynamic TSPL No Bitmap does not require "
+    "a template; use template mode only for advanced debugging."
 )
 
 PRN_MODE_TEMPLATE = "template_barcode_bitmap"
@@ -80,8 +80,8 @@ BARTENDER_2UP_COORDS = {
         "heading": (278, 385),
         "field": (355, 354),
         "value": (231, 354),
-        "care": (355, 264),
-        "address": (355, 244),
+        "care": (355, 268),
+        "address": (355, 246),
         "barcode": (361, 122),
         "barcode_text": (300, 76),
         "title": (374, 48),
@@ -90,8 +90,8 @@ BARTENDER_2UP_COORDS = {
         "heading": (689, 385),
         "field": (766, 354),
         "value": (642, 354),
-        "care": (766, 264),
-        "address": (766, 244),
+        "care": (766, 268),
+        "address": (766, 246),
         "barcode": (772, 122),
         "barcode_text": (711, 76),
         "title": (785, 48),
@@ -141,7 +141,7 @@ BARTENDER_4UP_COORDS = {
     },
 }
 FIELD_ROW_GAP_DOTS = 16
-ADDRESS_GAP_DOTS = 14
+ADDRESS_GAP_DOTS = 15
 FIELD_LABEL_WIDTH = 16
 MAX_ADDRESS_LINES = 7
 CAPTION_TEXT_MARKERS = [
@@ -281,7 +281,7 @@ def add_label(lines, row, branch, slot, caption_values_only=False):
 
     lines.append(text_cmd(care_x, care_y, "0", 180, 3, 4, payload["care_heading"]))
     for index, line in enumerate(payload["address_lines"][:MAX_ADDRESS_LINES]):
-        lines.append(text_cmd(address_x, address_y - index * ADDRESS_GAP_DOTS, "0", 180, 3, 4, text_fit(line, 50)))
+        lines.append(text_cmd(address_x, address_y - index * ADDRESS_GAP_DOTS, "ROMAN.TTF", 180, 1, 5, text_fit(line, 54)))
 
     lines.append(barcode_cmd(barcode_x, barcode_y, payload["fnsku"]))
     lines.append(text_cmd(barcode_text_x, barcode_text_y, "ROMAN.TTF", 180, 1, 8, payload["fnsku"]))
@@ -453,6 +453,7 @@ def generate_amazon_prn(out, rows, branch, progress_callback=None):
         out_lines.append("PRINT 1,1")
         if progress_callback and (done == total or done % 100 == 0):
             progress_callback(done, total)
+    Path(out).parent.mkdir(parents=True, exist_ok=True)
     with open(out, "w", encoding="cp1252", errors="replace", newline="\r\n") as f:
         f.write("\n".join(out_lines))
         f.write("\n")

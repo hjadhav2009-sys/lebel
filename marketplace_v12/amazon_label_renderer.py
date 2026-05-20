@@ -144,23 +144,21 @@ def branch_origin_for_print(branch):
 
 
 def branch_address_lines(branch):
-    split_address = [
+    lines = [
+        clean_text(branch.get("marketed_by", "") or branch.get("company", "")),
         clean_text(branch.get("address_line1", "")),
         clean_text(branch.get("address_line2", "")),
         clean_text(branch.get("city_state", "")),
     ]
-    address = " ".join([line for line in split_address if line])
-    lines = [
-        clean_text(branch.get("marketed_by", "") or branch.get("company", "")),
-        clean_text(address or branch.get("address", "")),
-    ]
+    if not any(lines[1:]):
+        lines.append(clean_text(branch.get("address", "")))
     return [line for line in lines if clean_text(line) and not line.endswith(": ")]
 
 
 def build_address_lines(branch):
     lines = []
     for raw in branch_address_lines(branch):
-        lines.extend(wrap_text(raw, 42)[:2])
+        lines.extend(wrap_text(raw, 48)[:2])
     lines.extend(
         [
             f"Email Id:{clean_text(branch.get('email', ''))}",
@@ -168,7 +166,7 @@ def build_address_lines(branch):
             f"Origin:{branch_origin_for_print(branch)}",
         ]
     )
-    return [fit_text(line, 48) for line in lines if clean_text(line)]
+    return [fit_text(line, 52) for line in lines if clean_text(line)]
 
 
 def build_amazon_label_payload(row, branch):

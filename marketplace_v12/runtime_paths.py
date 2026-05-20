@@ -8,6 +8,7 @@ from pathlib import Path
 APPDATA_FOLDER = "MMS_Label_Tools"
 DEFAULT_OUTPUT_FOLDER = "MMS_Label_Tools_Output"
 AMAZON_TEMPLATE_RELATIVE = Path("reference_templates") / "amazon" / "amazon_template.prn"
+AMAZON_RUNTIME_VERSION = "V31_DYNAMIC_TSPL"
 
 
 def desktop_dir():
@@ -55,6 +56,10 @@ def app_settings_path():
     return settings_dir() / "app_settings.json"
 
 
+def amazon_address_path():
+    return settings_dir() / "amazon_address.json"
+
+
 def amazon_template_path():
     return amazon_template_dir() / "amazon_template.prn"
 
@@ -77,8 +82,14 @@ def load_app_settings():
 def save_app_settings(data):
     settings_dir().mkdir(parents=True, exist_ok=True)
     clean = load_app_settings()
-    if data.get("output_root"):
-        clean["output_root"] = str(Path(str(data["output_root"])).expanduser())
+    for key, value in dict(data or {}).items():
+        if key == "output_root":
+            if value:
+                clean["output_root"] = str(Path(str(value)).expanduser())
+        else:
+            clean[key] = value
+    if not clean.get("output_root"):
+        clean["output_root"] = str(default_output_root())
     app_settings_path().write_text(json.dumps(clean, indent=2), encoding="utf-8")
     ensure_output_folders(Path(clean["output_root"]))
     return clean
@@ -136,6 +147,32 @@ def logs_dir():
     path = output_root() / "Logs"
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def ensure_runtime_folders():
+    root = appdata_root()
+    resources_dir().mkdir(parents=True, exist_ok=True)
+    settings_dir().mkdir(parents=True, exist_ok=True)
+    templates_dir().mkdir(parents=True, exist_ok=True)
+    ensure_output_folders(output_root())
+    return {
+        "appdata_root": root,
+        "settings_dir": settings_dir(),
+        "output_root": output_root(),
+    }
+
+
+def backup_amazon_template_cache(stamp):
+    source = amazon_template_dir()
+    if not source.exists():
+        return ""
+    target = templates_dir() / f"amazon_backup_{stamp}"
+    counter = 1
+    while target.exists():
+        target = templates_dir() / f"amazon_backup_{stamp}_{counter}"
+        counter += 1
+    source.rename(target)
+    return str(target)
 
 
 def get_resource_path(relative_path):

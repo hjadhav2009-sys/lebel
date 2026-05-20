@@ -42,9 +42,9 @@ DEFAULT_MAPPING_SETTINGS = {
     "selected_branch": "",
     "last_master_path": "",
     "pdf_layout": "BarTender 2UP 101.5x50",
-    "prn_mode": "template_barcode_bitmap",
-    "template_subtype": "caption_template",
-    "template_layout": "4UP Caption Template 101.6x101.6",
+    "prn_mode": "dynamic_tspl",
+    "template_subtype": "blank_template",
+    "template_layout": "Dynamic TSPL No Bitmap",
     "consignment": {
         "merchant_sku": "Merchant SKU",
         "title": "Title",
