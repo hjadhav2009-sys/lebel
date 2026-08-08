@@ -14,9 +14,9 @@ depends_on = None
 
 UUID = postgresql.UUID(as_uuid=True)
 JSON = postgresql.JSONB(astext_type=sa.Text())
-marketplace = sa.Enum("AMAZON", "FLIPKART", name="marketplace")
-import_status = sa.Enum("PENDING", "PROCESSING", "COMPLETED", "COMPLETED_WITH_ERRORS", "FAILED", name="import_status")
-row_action = sa.Enum("NEW", "UPDATED", "UNCHANGED", "ERROR", name="row_action")
+marketplace = postgresql.ENUM("AMAZON", "FLIPKART", name="marketplace", create_type=False)
+import_status = postgresql.ENUM("PENDING", "PROCESSING", "COMPLETED", "COMPLETED_WITH_ERRORS", "FAILED", name="import_status", create_type=False)
+row_action = postgresql.ENUM("NEW", "UPDATED", "UNCHANGED", "ERROR", name="row_action", create_type=False)
 
 
 def timestamps():
@@ -24,8 +24,9 @@ def timestamps():
 
 
 def upgrade() -> None:
-    bind = op.get_bind()
-    marketplace.create(bind, checkfirst=True); import_status.create(bind, checkfirst=True); row_action.create(bind, checkfirst=True)
+    op.execute("CREATE TYPE marketplace AS ENUM ('AMAZON', 'FLIPKART')")
+    op.execute("CREATE TYPE import_status AS ENUM ('PENDING', 'PROCESSING', 'COMPLETED', 'COMPLETED_WITH_ERRORS', 'FAILED')")
+    op.execute("CREATE TYPE row_action AS ENUM ('NEW', 'UPDATED', 'UNCHANGED', 'ERROR')")
     op.create_table("roles", sa.Column("id", sa.Integer(), primary_key=True), sa.Column("name", sa.String(40), nullable=False, unique=True))
     op.create_table("users", sa.Column("id", UUID, primary_key=True), sa.Column("email", sa.String(255), nullable=False, unique=True), sa.Column("display_name", sa.String(120), nullable=False), sa.Column("password_hash", sa.String(255)), sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.true()), *timestamps())
     op.create_index("ix_users_email", "users", ["email"], unique=True)
@@ -66,4 +67,4 @@ def downgrade() -> None:
     op.drop_constraint("fk_account_default_address", "marketplace_accounts", type_="foreignkey")
     for table in ("printer_profiles", "printers", "print_agents", "audit_events", "label_format_profiles", "mapping_profiles", "address_profiles", "print_job_lines", "print_jobs", "consignment_lines", "consignments", "import_errors", "catalog_import_rows", "product_images", "catalog_identifiers", "catalog_products", "catalog_imports", "catalog_batches", "user_roles", "marketplace_accounts", "users", "roles"):
         op.drop_table(table)
-    bind = op.get_bind(); row_action.drop(bind, checkfirst=True); import_status.drop(bind, checkfirst=True); marketplace.drop(bind, checkfirst=True)
+    op.execute("DROP TYPE row_action"); op.execute("DROP TYPE import_status"); op.execute("DROP TYPE marketplace")
