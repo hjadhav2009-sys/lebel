@@ -1,5 +1,6 @@
 from copy import deepcopy
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -33,7 +34,7 @@ class ConsignmentLabelDataService:
 
     def snapshot(self, line: ConsignmentLine) -> dict:
         resolved = self.resolve(line)
-        return {"marketplace": line.consignment.marketplace.value, "account": {"id": str(line.consignment.account.id), "name": line.consignment.account.name},
+        payload = {"marketplace": line.consignment.marketplace.value, "account": {"id": str(line.consignment.account.id), "name": line.consignment.account.name},
             "consignment": {"id": str(line.consignment.id), "name": line.consignment.name}, "product_id": str(line.product_id) if line.product_id else None,
             "consignment_line_id": str(line.id), "sku": line.merchant_sku, "asin": line.asin, "fnsku": line.fnsku, "fsn": line.fsn,
             "listing_id": line.listing_id, "title": resolved["fields"]["title"]["value"], "brand": resolved["fields"]["brand"]["value"],
@@ -42,3 +43,14 @@ class ConsignmentLabelDataService:
             "format": line.format_key, "generic_name": resolved["fields"]["generic_name"]["value"], "address_profile": resolved["address_profile"],
             "label_fields": {k: v["value"] for k, v in resolved["fields"].items()}, "override_sources": {k: v["source"] for k, v in resolved["fields"].items()},
             "renderer_placeholder_version": "phase2-snapshot-v1"}
+        return _json_safe(payload)
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    return value

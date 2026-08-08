@@ -159,7 +159,9 @@ def patch_line(line_id: UUID, payload: ConsignmentLinePatch, db: Session = Depen
         values = dict(line.label_overrides or {}); old = values.get(override[payload.field]); values[override[payload.field]] = value; line.label_overrides = values
     line.version += 1
     ConsignmentValidationService(db).validate(line)
-    db.add(AuditEvent(entity_type="consignment_line", entity_id=str(line.id), action="manual_override", changes={payload.field: {"old": old, "new": value}}, context={"consignment_line_id": str(line.id)})); db.commit()
+    audit_old = str(old) if isinstance(old, Decimal) else old
+    audit_new = str(value) if isinstance(value, Decimal) else value
+    db.add(AuditEvent(entity_type="consignment_line", entity_id=str(line.id), action="manual_override", changes={payload.field: {"old": audit_old, "new": audit_new}}, context={"consignment_line_id": str(line.id)})); db.commit()
     return _line_dict(line)
 
 
