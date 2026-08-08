@@ -41,7 +41,8 @@ def list_consignments(marketplace: str | None = None, account_id: UUID | None = 
     rows = list(db.scalars(query.order_by(Consignment.updated_at.desc()).offset((page - 1) * page_size).limit(page_size)).all())
     items = []
     for row in rows:
-        states = dict(db.execute(select(ConsignmentLine.workflow_state, func.count()).where(ConsignmentLine.consignment_id == row.id).group_by(ConsignmentLine.workflow_state)).all())
+        state_rows = db.execute(select(ConsignmentLine.workflow_state, func.count()).where(ConsignmentLine.consignment_id == row.id).group_by(ConsignmentLine.workflow_state)).all()
+        states: dict[str, int] = {state: count for state, count in state_rows}
         items.append(_consignment_dict(row, {"rows": sum(states.values()), "to_print": states.get("to_print", 0), "blocked": states.get("blocked", 0), "printed": states.get("printed", 0)}))
     return {"items": items, "total": total, "page": page, "page_size": page_size, "page_count": ceil(total / page_size) if total else 0}
 
@@ -168,14 +169,14 @@ def patch_line(line_id: UUID, payload: ConsignmentLinePatch, db: Session = Depen
 @line_router.post("/bulk-select")
 def bulk_select(payload: BulkSelection, db: Session = Depends(get_db)):
     result = db.execute(update(ConsignmentLine).where(ConsignmentLine.consignment_id == payload.consignment_id, ConsignmentLine.id.in_(payload.line_ids)).values(selected_for_print=payload.selected, version=ConsignmentLine.version + 1))
-    db.commit(); return {"updated": result.rowcount, "selected": payload.selected}
+    db.commit(); return {"updated": getattr(result, "rowcount", 0), "selected": payload.selected}
 
 
 @line_router.post("/bulk-status")
 def bulk_status(payload: BulkStatus, db: Session = Depends(get_db)):
     if payload.workflow_state not in {"to_print", "done", "excluded"}: raise HTTPException(422, detail={"code": "INVALID_WORKFLOW_STATE", "message": "Unsupported workflow state."})
     result = db.execute(update(ConsignmentLine).where(ConsignmentLine.consignment_id == payload.consignment_id, ConsignmentLine.id.in_(payload.line_ids)).values(workflow_state=payload.workflow_state, selected_for_print=False, version=ConsignmentLine.version + 1))
-    db.commit(); return {"updated": result.rowcount, "workflow_state": payload.workflow_state}
+    db.commit(); return {"updated": getattr(result, "rowcount", 0), "workflow_state": payload.workflow_state}
 
 
 @line_router.get("/{line_id}/resolved-label-data")
