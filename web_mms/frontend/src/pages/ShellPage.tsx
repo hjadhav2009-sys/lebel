@@ -1,2 +1,8 @@
-import { Construction } from "lucide-react";
-export function ShellPage({name,description}:{name:string;description:string}){return <section className="content"><div className="page-heading"><div><p className="eyebrow">MMS OPERATIONS</p><h1>{name}</h1><p>{description}</p></div></div><div className="migration-shell"><Construction size={34}/><strong>{name} migration boundary is ready</strong><p>This phase establishes navigation and API contracts. Legacy production logic remains untouched.</p></div></section>}
+import { Construction, FileUp, Scissors } from "lucide-react";
+
+export function ShellPage({name,description}:{name:string;description:string}){
+  const tools=name==="PDF Tools"?["Auto Crop","Manual Crop","Combine Output"]:[];
+  if(name==="Packing")return <section className="content"><div className="page-heading"><div><p className="eyebrow">MIGRATION ADAPTER</p><h1>Packing</h1><p>{description}</p></div></div><div className="migration-cards"><div><FileUp size={25}/><strong>Upload Orders</strong><p>Future web adapter for the validated legacy order and packing parser.</p><button className="secondary" disabled>Available in Desktop during migration</button></div><div><Construction size={25}/><strong>Recent Packing Jobs</strong><p>No web packing jobs yet. Phase 2 does not copy or rewrite the production parser.</p></div></div></section>;
+  if(name==="PDF Tools")return <section className="content"><div className="page-heading"><div><p className="eyebrow">MIGRATION ADAPTER</p><h1>PDF Tools</h1><p>{description}</p></div></div><div className="migration-cards">{tools.map(tool=><div key={tool}><Scissors size={25}/><strong>{tool}</strong><p>The existing PyMuPDF workflow remains the source of truth.</p><button className="secondary" disabled>Available in Desktop during migration</button></div>)}</div></section>;
+  return <section className="content"><div className="page-heading"><div><p className="eyebrow">MMS OPERATIONS</p><h1>{name}</h1><p>{description}</p></div></div><div className="migration-shell"><Construction size={34}/><strong>{name} migration boundary is ready</strong><p>Legacy production logic remains untouched.</p></div></section>;
+}

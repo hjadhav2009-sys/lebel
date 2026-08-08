@@ -199,29 +199,89 @@ class CatalogBatch(Base):
 class Consignment(TimestampMixin, Base):
     __tablename__ = "consignments"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    account_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("marketplace_accounts.id"))
+    account_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("marketplace_accounts.id"), index=True)
+    marketplace: Mapped[Marketplace] = mapped_column(Enum(Marketplace, name="marketplace"), index=True)
     name: Mapped[str] = mapped_column(String(180))
-    status: Mapped[str] = mapped_column(String(30), default="open")
+    reference_number: Mapped[str | None] = mapped_column(String(180))
+    source_file_name: Mapped[str | None] = mapped_column(String(255))
+    source_file_sha256: Mapped[str | None] = mapped_column(String(64))
+    source_type: Mapped[str] = mapped_column(String(80), default="manual")
+    status: Mapped[str] = mapped_column(String(30), default="draft", index=True)
+    created_by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    metadata_: Mapped[dict] = mapped_column("metadata", JSON, default=dict)
+    account: Mapped[MarketplaceAccount] = relationship()
+    lines: Mapped[list["ConsignmentLine"]] = relationship(back_populates="consignment", cascade="all, delete-orphan")
+    __table_args__ = (Index("ix_consignments_scope", "account_id", "marketplace", "status", "created_at"),)
 
 
-class ConsignmentLine(Base):
+class ConsignmentLine(TimestampMixin, Base):
     __tablename__ = "consignment_lines"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    consignment_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("consignments.id", ondelete="CASCADE"))
+    consignment_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("consignments.id", ondelete="CASCADE"), index=True)
     product_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("catalog_products.id"))
-    quantity: Mapped[int | None] = mapped_column(Integer)
-    net_quantity: Mapped[int | None] = mapped_column(Integer)
+    source_row: Mapped[int | None] = mapped_column(Integer)
+    source_line_key: Mapped[str | None] = mapped_column(String(64))
+    merchant_sku: Mapped[str | None] = mapped_column(String(180), index=True)
+    asin: Mapped[str | None] = mapped_column(String(40), index=True)
+    fnsku: Mapped[str | None] = mapped_column(String(80), index=True)
+    fsn: Mapped[str | None] = mapped_column(String(80), index=True)
+    listing_id: Mapped[str | None] = mapped_column(String(180), index=True)
+    title_snapshot: Mapped[str | None] = mapped_column(Text)
+    brand_snapshot: Mapped[str | None] = mapped_column(String(180))
+    category_snapshot: Mapped[str | None] = mapped_column(String(180))
+    format_key: Mapped[str | None] = mapped_column(String(100), index=True)
+    source_quantity: Mapped[int | None] = mapped_column(Integer)
+    print_quantity: Mapped[int] = mapped_column(Integer, default=1)
+    net_quantity_value: Mapped[int] = mapped_column(Integer, default=1)
+    net_quantity_unit: Mapped[str] = mapped_column(String(20), default="N")
+    mrp_catalog: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    mrp_override: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    mrp_source: Mapped[str] = mapped_column(String(30), default="missing")
+    selected_for_print: Mapped[bool] = mapped_column(Boolean, default=False)
+    workflow_state: Mapped[str] = mapped_column(String(30), default="to_print", index=True)
+    match_status: Mapped[str] = mapped_column(String(30), default="unmatched")
+    match_method: Mapped[str | None] = mapped_column(String(40))
+    error_count: Mapped[int] = mapped_column(Integer, default=0)
+    label_overrides: Mapped[dict] = mapped_column(JSON, default=dict)
+    address_profile_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("address_profiles.id"))
+    last_printed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    successful_print_count: Mapped[int] = mapped_column(Integer, default=0)
+    version: Mapped[int] = mapped_column(Integer, default=1)
     raw_row: Mapped[dict] = mapped_column(JSON, default=dict)
+    consignment: Mapped[Consignment] = relationship(back_populates="lines")
+    product: Mapped[CatalogProduct | None] = relationship()
+
+
+class ConsignmentIssue(Base):
+    __tablename__ = "consignment_issues"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    consignment_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("consignments.id", ondelete="CASCADE"), index=True)
+    consignment_line_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("consignment_lines.id", ondelete="CASCADE"), index=True)
+    severity: Mapped[str] = mapped_column(String(20), index=True)
+    code: Mapped[str] = mapped_column(String(80), index=True)
+    field: Mapped[str | None] = mapped_column(String(80))
+    message: Mapped[str] = mapped_column(Text)
+    resolved: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    resolved_by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class PrintJob(TimestampMixin, Base):
     __tablename__ = "print_jobs"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     consignment_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("consignments.id"))
+    account_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("marketplace_accounts.id"), index=True)
+    marketplace: Mapped[Marketplace] = mapped_column(Enum(Marketplace, name="marketplace"), index=True)
     status: Mapped[str] = mapped_column(String(30), default="ready")
     printer_name: Mapped[str | None] = mapped_column(String(180))
+    printer_profile_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("printer_profiles.id"))
     renderer_version: Mapped[str | None] = mapped_column(String(80))
     created_by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    is_simulation: Mapped[bool] = mapped_column(Boolean, default=False)
+    lines: Mapped[list["PrintJobLine"]] = relationship(cascade="all, delete-orphan")
 
 
 class PrintJobLine(Base):
@@ -231,6 +291,20 @@ class PrintJobLine(Base):
     consignment_line_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("consignment_lines.id"))
     label_count: Mapped[int] = mapped_column(Integer)
     data_snapshot: Mapped[dict] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(30), default="ready")
+    result: Mapped[str | None] = mapped_column(String(30))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    source_print_job_line_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("print_job_lines.id"))
+
+
+class PrintJobEvent(Base):
+    __tablename__ = "print_job_events"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    print_job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("print_jobs.id", ondelete="CASCADE"), index=True)
+    event_type: Mapped[str] = mapped_column(String(40), index=True)
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class PrintAgent(TimestampMixin, Base):
@@ -278,9 +352,28 @@ class ProfileBase(TimestampMixin):
     config: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
-class AddressProfile(ProfileBase, Base): __tablename__ = "address_profiles"
+class AddressProfile(ProfileBase, Base):
+    __tablename__ = "address_profiles"
+    marketed_by: Mapped[str] = mapped_column(Text)
+    address_line_1: Mapped[str] = mapped_column(Text)
+    address_line_2: Mapped[str | None] = mapped_column(Text)
+    city_state: Mapped[str] = mapped_column(String(180))
+    email: Mapped[str | None] = mapped_column(String(255))
+    phone: Mapped[str | None] = mapped_column(String(40))
+    origin: Mapped[str | None] = mapped_column(String(120))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False)
+
 class MappingProfile(ProfileBase, Base): __tablename__ = "mapping_profiles"
-class LabelFormatProfile(ProfileBase, Base): __tablename__ = "label_format_profiles"
+class LabelFormatProfile(ProfileBase, Base):
+    __tablename__ = "label_format_profiles"
+    key: Mapped[str] = mapped_column(String(100), index=True)
+    display_name: Mapped[str] = mapped_column(String(120))
+    marketplace: Mapped[Marketplace | None] = mapped_column(Enum(Marketplace, name="marketplace"))
+    generic_name: Mapped[str | None] = mapped_column(String(180))
+    required_fields: Mapped[list] = mapped_column(JSON, default=list)
+    field_order: Mapped[list] = mapped_column(JSON, default=list)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
 class AuditEvent(Base):
