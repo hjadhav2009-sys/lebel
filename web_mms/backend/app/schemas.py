@@ -1,6 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -213,3 +213,63 @@ class PrintJobCreate(BaseModel):
 
 class ReprintRequest(BaseModel):
     source_line_ids: list[UUID] | None = None
+
+
+class AgentPairRequest(BaseModel):
+    code: str
+    machine_name: str = Field(min_length=1, max_length=180)
+    name: str = Field(min_length=1, max_length=120)
+    version: str | None = None
+
+
+class AgentHeartbeat(BaseModel):
+    version: str | None = None
+    windows_version: str | None = None
+    uptime_seconds: int | None = Field(default=None, ge=0)
+    last_error: str | None = None
+
+
+class DiscoveredPrinter(BaseModel):
+    name: str
+    driver_name: str = "Unknown"
+    port_name: str | None = None
+    dpi: int = Field(default=203, ge=100, le=1200)
+    status: str = "online"
+    is_default: bool = False
+    is_network: bool = False
+
+
+class PrinterSync(BaseModel):
+    printers: list[DiscoveredPrinter]
+
+
+class AgentJobReport(BaseModel):
+    claim_token: str
+    status: str
+    spool_job_id: str | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+
+
+class PrinterProfileWrite(BaseModel):
+    marketplace: Literal["amazon", "flipkart"]
+    account_id: UUID | None = None
+    media_width_mm: float = Field(gt=0, le=300)
+    media_height_mm: float = Field(gt=0, le=300)
+    gap_mm: float = Field(default=2, ge=0, le=30)
+    speed: int | None = Field(default=None, ge=1, le=15)
+    darkness: int | None = Field(default=None, ge=0, le=15)
+    renderer: str
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class RendererApprovalWrite(BaseModel):
+    test_print_job_id: UUID
+    format_key: str | None = None
+    notes: str | None = None
+
+
+class BarcodeVerificationWrite(BaseModel):
+    print_job_line_id: UUID | None = None
+    expected_value: str
+    scanned_value: str
