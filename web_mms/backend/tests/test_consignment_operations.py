@@ -15,7 +15,6 @@ from app.services.amazon_consignment_service import AmazonConsignmentService, po
 from app.services.consignment_import_service import ConsignmentImportService, ParsedConsignment
 from app.services.consignment_matching import ConsignmentMatcher
 from app.services.consignment_validation import ConsignmentValidationService
-from app.services.flipkart_consignment_service import FlipkartQuantityMatcher
 from app.services.label_data_service import ConsignmentLabelDataService
 from app.services.print_job_service import PrintJobService, PrintJobValidationError
 
