@@ -21,4 +21,4 @@ def health():
 @app.exception_handler(Exception)
 async def unhandled_error(_: Request, exc: Exception):
     logging.exception("Unhandled API error", exc_info=exc)
-    return JSONResponse(status_code=500, content={"code": "internal_error", "message": "The request could not be completed."})
+    return JSONResponse(status_code=500, content={"code": "internal_error", "message": "The request could not be completed.", "details": {}})

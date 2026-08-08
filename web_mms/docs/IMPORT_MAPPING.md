@@ -23,3 +23,7 @@ Flipkart maps Listing ID, FSN, SKU, MRP, FSP, brand, and category/format. FSN is
 ## Incremental decisions
 
 Each normalized row creates a business key and canonical hash. Missing stable identifiers are errors. New keys insert; identical hashes stay untouched; changed hashes update current fields and create field-level audit events. Products absent from a later file are never deleted. Raw input JSON is stored on every import row. Missing MRP stays null and never receives a guessed fallback.
+
+Seller SKU is the primary identity within a marketplace account. Amazon ASIN/FNSKU and Flipkart FSN/Listing ID enrich that product but never silently merge distinct seller SKUs. The same FSN or ASIN may therefore occur under different SKU contexts.
+
+Every upload stores SHA-256, byte size, original filename, selected sheet, and header row. Excel workbooks are scored across all worksheets rather than trusting the first sheet or its name. Cached formula values are imported; a required formula without a cached value produces `FORMULA_RESULT_MISSING` and the expression itself is never imported.

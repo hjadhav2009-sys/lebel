@@ -1,0 +1,9 @@
+export type Account = { id:string; marketplace:"amazon"|"flipkart"; name:string; external_id?:string; default_address_profile_id?:string; is_active:boolean; created_at:string; updated_at:string };
+export type Identifier = { kind:string; value:string; source:string };
+export type ProductImage = { id:string; url:string; cached_url?:string; kind:string; position:number; source:string; status:string; last_checked_at?:string };
+export type Product = { id:string; account:Account; sku?:string; title?:string; brand?:string; mrp?:number; category?:string; source_file?:string; source_template?:string; source_category?:string; extra_attributes:Record<string,unknown>; created_at:string; updated_at:string; identifiers:Identifier[]; images:ProductImage[] };
+export type ProductPage = { items:Product[]; total:number; page:number; page_size:number; page_count:number };
+export type InventoryStats = { total:number; with_images:number; missing_images:number };
+export type CurrentUser = { email:string; display_name:string; roles:string[]; development:boolean };
+export type ImportPreview = { file:string; sheet:string; marketplace:string; detected_type:string; header_row:number; rows:number; mapping_status:string; warnings:string[]; file_sha256:string; previously_imported:boolean };
+export type ImportError = { id:string; created_at:string; severity:string; marketplace:string; account?:string; source_file?:string; source_row?:number; product_identifier?:string; field?:string; code:string; message:string; suggested_action?:string; resolved:boolean };

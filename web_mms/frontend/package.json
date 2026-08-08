@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "tsc -b && vite build",
-    "typecheck": "tsc -b --pretty false"
+    "typecheck": "tsc -b --pretty false",
+    "test": "vitest run"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
@@ -16,8 +17,12 @@
     "vite": "latest"
   },
   "devDependencies": {
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.3",
     "@types/react": "latest",
     "@types/react-dom": "latest",
-    "typescript": "latest"
+    "jsdom": "^29.1.1",
+    "typescript": "latest",
+    "vitest": "^4.1.10"
   }
 }

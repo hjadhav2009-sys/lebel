@@ -1,0 +1,7 @@
+import { useEffect, useState } from "react";
+import { Plus } from "lucide-react";
+import { api } from "../../api/client";
+import { EmptyState, ErrorState, LoadingSkeleton } from "../../components/States";
+import { StatusBadge } from "../../components/StatusBadge";
+import type { Account } from "../../types";
+export function AccountsPage(){const[data,setData]=useState<Account[]|null>(null),[error,setError]=useState("");useEffect(()=>{api<Account[]>("/accounts?include_inactive=true").then(setData).catch(e=>setError(e.message))},[]);return <section className="content"><div className="page-heading"><div><p className="eyebrow">MANAGEMENT</p><h1>Marketplace Accounts</h1><p>Strict seller boundaries prevent catalogs from being merged accidentally.</p></div><button className="primary"><Plus size={16}/>New account</button></div>{error?<ErrorState message={error}/>:data===null?<LoadingSkeleton/>:!data.length?<EmptyState title="No accounts configured" detail="Add an Amazon or Flipkart seller account to begin."/>:<div className="table-card"><table><thead><tr><th>Marketplace</th><th>Account name</th><th>External ID</th><th>Status</th><th>Created</th><th>Updated</th></tr></thead><tbody>{data.map(a=><tr key={a.id}><td className="capitalize">{a.marketplace}</td><td><strong>{a.name}</strong></td><td>{a.external_id??"—"}</td><td><StatusBadge status={a.is_active?"available":"inactive"}/></td><td>{new Date(a.created_at).toLocaleDateString()}</td><td>{new Date(a.updated_at).toLocaleDateString()}</td></tr>)}</tbody></table></div>}</section>}

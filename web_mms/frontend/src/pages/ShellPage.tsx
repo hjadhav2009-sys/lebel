@@ -1,0 +1,2 @@
+import { Construction } from "lucide-react";
+export function ShellPage({name,description}:{name:string;description:string}){return <section className="content"><div className="page-heading"><div><p className="eyebrow">MMS OPERATIONS</p><h1>{name}</h1><p>{description}</p></div></div><div className="migration-shell"><Construction size={34}/><strong>{name} migration boundary is ready</strong><p>This phase establishes navigation and API contracts. Legacy production logic remains untouched.</p></div></section>}

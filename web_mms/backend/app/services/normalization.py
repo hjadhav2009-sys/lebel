@@ -5,6 +5,8 @@ from dataclasses import asdict, dataclass, field
 from decimal import Decimal, InvalidOperation
 from typing import Any, Iterable
 
+from app.services.identity_policy import IdentityPolicy
+
 
 def _header(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value or "").strip()).casefold()
@@ -50,16 +52,19 @@ class NormalizedProduct:
     source_category: str | None = None
 
     def business_key(self) -> str:
-        candidates = (("sku", self.sku), ("fsn", self.identifiers.get("fsn")), ("asin", self.identifiers.get("asin")), ("listing_id", self.identifiers.get("listing_id")))
-        for kind, value in candidates:
-            if value:
-                return f"{self.marketplace}:{kind}:{value.strip().casefold()}"
-        raise ValueError("A stable identifier (SKU, FSN, ASIN, or Listing ID) is required")
+        return IdentityPolicy.decide(self.marketplace, self.sku, self.identifiers).business_key
 
     def row_hash(self) -> str:
         payload = asdict(self)
+        payload["sku"] = " ".join((payload["sku"] or "").split()).casefold() or None
+        for field_name in ("title", "brand", "category", "source_template", "source_category"):
+            if payload[field_name]:
+                payload[field_name] = " ".join(payload[field_name].split())
         payload["images"] = sorted(set(payload["images"]))
-        payload["identifiers"] = dict(sorted(payload["identifiers"].items()))
+        payload["identifiers"] = {
+            key: " ".join(value.split()).casefold()
+            for key, value in sorted(payload["identifiers"].items())
+        }
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
         return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
@@ -159,15 +164,9 @@ def flipkart_product_url(fsn: str) -> str:
 def classify_snapshots(existing: dict[str, str], incoming: Iterable[NormalizedProduct]) -> dict[str, int]:
     """Pure planning helper used by previews and large-import tests."""
     counts = {"new": 0, "updated": 0, "unchanged": 0, "errors": 0}
-    seen_identifiers: set[tuple[str, str]] = set()
     for row in incoming:
         try:
             key, digest = row.business_key(), row.row_hash()
-            for kind, value in row.identifiers.items():
-                marker = kind, value.casefold()
-                if marker in seen_identifiers:
-                    raise ValueError(f"Duplicate {kind}: {value}")
-                seen_identifiers.add(marker)
             counts["new" if key not in existing else "unchanged" if existing[key] == digest else "updated"] += 1
         except ValueError:
             counts["errors"] += 1

@@ -18,6 +18,7 @@ class ImportStatus(str, enum.Enum):
     PENDING = "pending"
     PROCESSING = "processing"
     COMPLETED = "completed"
+    COMPLETED_WITH_ERRORS = "completed_with_errors"
     FAILED = "failed"
 
 
@@ -61,6 +62,7 @@ class MarketplaceAccount(TimestampMixin, Base):
     marketplace: Mapped[Marketplace] = mapped_column(Enum(Marketplace, name="marketplace"), index=True)
     name: Mapped[str] = mapped_column(String(120))
     external_id: Mapped[str | None] = mapped_column(String(120))
+    default_address_profile_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("address_profiles.id", use_alter=True, name="fk_account_default_address"))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     __table_args__ = (UniqueConstraint("marketplace", "name"),)
 
@@ -84,7 +86,11 @@ class CatalogProduct(TimestampMixin, Base):
     account: Mapped[MarketplaceAccount] = relationship()
     identifiers: Mapped[list["CatalogIdentifier"]] = relationship(back_populates="product", cascade="all, delete-orphan")
     images: Mapped[list["ProductImage"]] = relationship(back_populates="product", cascade="all, delete-orphan")
-    __table_args__ = (UniqueConstraint("account_id", "business_key"), Index("ix_catalog_search", "account_id", "sku", "category"))
+    __table_args__ = (
+        UniqueConstraint("account_id", "business_key"),
+        Index("ix_catalog_search", "account_id", "sku", "category"),
+        Index("ix_catalog_products_updated_at", "updated_at"),
+    )
 
 
 class CatalogIdentifier(Base):
@@ -94,7 +100,12 @@ class CatalogIdentifier(Base):
     kind: Mapped[str] = mapped_column(String(30))
     value: Mapped[str] = mapped_column(String(180), index=True)
     product: Mapped[CatalogProduct] = relationship(back_populates="identifiers")
-    __table_args__ = (UniqueConstraint("product_id", "kind"), UniqueConstraint("kind", "value", "product_id"),)
+    source: Mapped[str] = mapped_column(String(40), default="import")
+    authoritative_source: Mapped[str | None] = mapped_column(String(120))
+    __table_args__ = (
+        UniqueConstraint("product_id", "kind", "value"),
+        Index("ix_catalog_identifiers_kind_value", "kind", "value"),
+    )
 
 
 class ProductImage(Base):
@@ -102,9 +113,11 @@ class ProductImage(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     product_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("catalog_products.id", ondelete="CASCADE"), index=True)
     url: Mapped[str] = mapped_column(Text)
+    cached_url: Mapped[str | None] = mapped_column(Text)
     kind: Mapped[str] = mapped_column(String(30), default="other")
     position: Mapped[int] = mapped_column(Integer, default=0)
     source: Mapped[str] = mapped_column(String(40), default="import")
+    source_reference: Mapped[str | None] = mapped_column(String(180))
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(String(30), default="available")
     product: Mapped[CatalogProduct] = relationship(back_populates="images")
@@ -114,8 +127,14 @@ class ProductImage(Base):
 class CatalogImport(TimestampMixin, Base):
     __tablename__ = "catalog_imports"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    batch_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("catalog_batches.id"), index=True)
     account_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("marketplace_accounts.id"), index=True)
     source_file: Mapped[str] = mapped_column(String(255))
+    original_filename: Mapped[str] = mapped_column(String(255))
+    sheet_name: Mapped[str | None] = mapped_column(String(255))
+    file_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    file_size: Mapped[int] = mapped_column(Integer)
+    mapping: Mapped[dict] = mapped_column(JSON, default=dict)
     detected_type: Mapped[str | None] = mapped_column(String(80))
     status: Mapped[ImportStatus] = mapped_column(Enum(ImportStatus, name="import_status"), default=ImportStatus.PENDING)
     total_rows: Mapped[int] = mapped_column(Integer, default=0)
@@ -143,6 +162,7 @@ class CatalogImportRow(Base):
 class ImportError(Base):
     __tablename__ = "import_errors"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
     import_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("catalog_imports.id"), index=True)
     import_row_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("catalog_import_rows.id"))
     severity: Mapped[str] = mapped_column(String(20), index=True)
@@ -158,6 +178,22 @@ class ImportError(Base):
     resolved: Mapped[bool] = mapped_column(Boolean, default=False)
     resolved_by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        Index("ix_import_errors_code_resolved", "code", "resolved"),
+        Index("ix_import_errors_import_id_source_row", "import_id", "source_row"),
+    )
+
+
+class CatalogBatch(Base):
+    __tablename__ = "catalog_batches"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    account_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("marketplace_accounts.id"), index=True)
+    marketplace: Mapped[Marketplace] = mapped_column(Enum(Marketplace, name="marketplace"))
+    name: Mapped[str] = mapped_column(String(180))
+    status: Mapped[str] = mapped_column(String(30), default="pending")
+    created_by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Consignment(TimestampMixin, Base):
@@ -195,6 +231,44 @@ class PrintJobLine(Base):
     consignment_line_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("consignment_lines.id"))
     label_count: Mapped[int] = mapped_column(Integer)
     data_snapshot: Mapped[dict] = mapped_column(JSON)
+
+
+class PrintAgent(TimestampMixin, Base):
+    __tablename__ = "print_agents"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(120))
+    machine_name: Mapped[str] = mapped_column(String(180), unique=True)
+    token_hash: Mapped[str] = mapped_column(String(255))
+    status: Mapped[str] = mapped_column(String(30), default="offline", index=True)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    version: Mapped[str | None] = mapped_column(String(40))
+
+
+class Printer(TimestampMixin, Base):
+    __tablename__ = "printers"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    agent_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("print_agents.id"), index=True)
+    name: Mapped[str] = mapped_column(String(180))
+    driver_name: Mapped[str] = mapped_column(String(180))
+    dpi: Mapped[int] = mapped_column(Integer, default=203)
+    status: Mapped[str] = mapped_column(String(30), default="offline", index=True)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (UniqueConstraint("agent_id", "name"),)
+
+
+class PrinterProfile(TimestampMixin, Base):
+    __tablename__ = "printer_profiles"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    printer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("printers.id"), index=True)
+    marketplace: Mapped[Marketplace] = mapped_column(Enum(Marketplace, name="marketplace"))
+    account_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("marketplace_accounts.id"))
+    media_width_mm: Mapped[Decimal] = mapped_column(Numeric(8, 2))
+    media_height_mm: Mapped[Decimal] = mapped_column(Numeric(8, 2))
+    gap_mm: Mapped[Decimal | None] = mapped_column(Numeric(8, 2))
+    speed: Mapped[int | None] = mapped_column(Integer)
+    darkness: Mapped[int | None] = mapped_column(Integer)
+    renderer: Mapped[str] = mapped_column(String(80))
+    config: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
 class ProfileBase(TimestampMixin):

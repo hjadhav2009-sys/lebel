@@ -9,3 +9,5 @@ V47 remains the operational fallback. Root `main.py`, `app/`, `marketplace_v12/`
 5. Move operators only after catalog counts, blocking validation, label output, reprint audit, and recovery procedures pass acceptance.
 
 No automatic migration deletes source rows. Import corrections create new import runs; manual changes create audit events. Rollback during the transition means returning the operator to V47, not rewriting or downgrading its files.
+
+Future adapters map Tool 1 to the existing `app/` packing/order parser, Tool 2 to `marketplace_v12/`, and Tool 3 to `tools/flipkart_cropper/`. Phase 1.5 adds only web boundaries and navigation; no legacy module is modified or imported into the new runtime.

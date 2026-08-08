@@ -58,9 +58,19 @@ def test_incremental_20000_to_20200_scenario():
     assert result == {"new": 200, "updated": 0, "unchanged": 20_000, "errors": 0}
 
 
-def test_duplicate_identifier_blocks_second_row():
+def test_same_flipkart_fsn_with_different_skus_is_allowed():
     rows = [NormalizedProduct("flipkart", "A", identifiers={"fsn": "SAME"}), NormalizedProduct("flipkart", "B", identifiers={"fsn": "SAME"})]
-    assert classify_snapshots({}, rows)["errors"] == 1
+    assert classify_snapshots({}, rows) == {"new": 2, "updated": 0, "unchanged": 0, "errors": 0}
+
+
+def test_same_amazon_asin_does_not_merge_distinct_seller_skus():
+    first = NormalizedProduct("amazon", "SELLER-A", identifiers={"asin": "B0123"})
+    second = NormalizedProduct("amazon", "SELLER-B", identifiers={"asin": "B0123"})
+    assert first.business_key() != second.business_key()
+
+
+def test_business_key_normalizes_case_and_whitespace():
+    assert NormalizedProduct("amazon", " SKU  123 ").business_key() == NormalizedProduct("amazon", "sku 123").business_key()
 
 
 def test_missing_mrp_never_defaults_to_799():

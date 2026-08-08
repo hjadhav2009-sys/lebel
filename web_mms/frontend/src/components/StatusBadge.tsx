@@ -1,0 +1,1 @@
+export function StatusBadge({status}:{status:string}){return <span className={`status ${["available","completed","ready","online","resolved"].includes(status)?"available":"missing-status"}`}>{status.replaceAll("_"," ")}</span>}
