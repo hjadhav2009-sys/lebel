@@ -194,8 +194,8 @@ def test_24_matching_is_account_isolated(db):
 def test_25_optimistic_concurrency_conflict_returns_409(db):
     owner=account(db); catalog=product(db,owner,"S1"); batch=consignment(db,owner); line=printable_line(db,batch,catalog,version=2)
     with pytest.raises(HTTPException) as caught: patch_line(line.id,ConsignmentLinePatch(expected_version=1,field="print_quantity",value=3),db)
-    assert caught.value.status_code==409 and isinstance(caught.value.detail, dict)
-    assert caught.value.detail["code"]=="CONSIMENT_LINE_CHANGED"
+    assert caught.value.status_code==409
+    assert caught.value.detail=={"code":"CONSIMENT_LINE_CHANGED","message":"This row changed on another workstation. Refresh row."}
 
 
 def test_26_address_profiles_are_account_scoped(db):
