@@ -145,3 +145,71 @@ class ErrorPage(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class ConsignmentCreate(BaseModel):
+    account_id: UUID
+    marketplace: str
+    name: str = Field(min_length=2, max_length=180)
+    reference_number: str | None = None
+
+
+class ConsignmentPatch(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=180)
+    reference_number: str | None = None
+    status: str | None = None
+
+
+class ConsignmentLinePatch(BaseModel):
+    expected_version: int
+    field: str
+    value: Any
+
+
+class BulkSelection(BaseModel):
+    consignment_id: UUID
+    line_ids: list[UUID]
+    selected: bool
+
+
+class BulkStatus(BaseModel):
+    consignment_id: UUID
+    line_ids: list[UUID]
+    workflow_state: str
+
+
+class AddressProfileWrite(BaseModel):
+    account_id: UUID
+    name: str = Field(min_length=2, max_length=120)
+    marketed_by: str = Field(min_length=1)
+    address_line_1: str = Field(min_length=1)
+    address_line_2: str | None = None
+    city_state: str = Field(min_length=1)
+    email: str | None = None
+    phone: str | None = None
+    origin: str | None = None
+    is_active: bool = True
+    is_default: bool = False
+
+
+class LabelFormatWrite(BaseModel):
+    account_id: UUID | None = None
+    key: str = Field(pattern=r"^[a-z0-9_]+$")
+    display_name: str
+    marketplace: str | None = None
+    generic_name: str | None = None
+    required_fields: list[str] = Field(default_factory=list)
+    field_order: list[str] = Field(default_factory=list)
+    config: dict[str, Any] = Field(default_factory=dict)
+    is_active: bool = True
+
+
+class PrintJobCreate(BaseModel):
+    consignment_id: UUID
+    line_ids: list[UUID] | None = None
+    printer_profile_id: UUID | None = None
+    test_labels: bool = False
+
+
+class ReprintRequest(BaseModel):
+    source_line_ids: list[UUID] | None = None

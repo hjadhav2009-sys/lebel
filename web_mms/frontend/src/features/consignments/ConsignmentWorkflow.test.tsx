@@ -1,0 +1,28 @@
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { vi } from "vitest";
+import type { Account, Consignment, ConsignmentLine } from "../../types";
+import { ConsignmentDrawer } from "./ConsignmentDrawer";
+import { ConsignmentTable } from "./ConsignmentTable";
+import { CreateConsignment } from "./CreateConsignment";
+import { InlineCellEditor } from "./InlineCellEditor";
+
+const account:Account={id:"a1",marketplace:"amazon",name:"Amazon Mumbai",is_active:true,created_at:"2026-01-01",updated_at:"2026-01-01"};
+const consignment:Consignment={id:"c1",account_id:"a1",account_name:"Amazon Mumbai",marketplace:"amazon",name:"Week 32",source_type:"Amazon Consignment",status:"open",created_at:"2026-01-01",updated_at:"2026-01-01"};
+const line=(id="l1"):ConsignmentLine=>({id,consignment_id:"c1",product_id:"p1",source_row:2,merchant_sku:`SKU-${id}`,asin:"A1",fnsku:"F1",title:"Pendant",brand:"MMS",format_key:"key_chain",mrp:799,mrp_source:"catalog",net_quantity_value:1,net_quantity_unit:"N",print_quantity:2,selected_for_print:false,workflow_state:"to_print",match_status:"matched",match_method:"SKU",error_count:0,issue_codes:[],version:1,successful_print_count:0});
+const ok=(value:unknown)=>Promise.resolve(new Response(JSON.stringify(value),{status:200,headers:{"Content-Type":"application/json"}}));
+
+test("independent inline field edit saves on Enter",async()=>{const save=vi.fn().mockResolvedValue(undefined);render(<InlineCellEditor label="MRP" type="number" value={100} onSave={save}/>);fireEvent.doubleClick(screen.getByLabelText("Edit MRP"));fireEvent.change(screen.getByLabelText("MRP"),{target:{value:"250"}});fireEvent.keyDown(screen.getByLabelText("MRP"),{key:"Enter"});await waitFor(()=>expect(save).toHaveBeenCalledWith("250"))});
+
+test("invalid field edit stays open with inline error",()=>{render(<InlineCellEditor label="Print quantity" type="number" value={2} onSave={vi.fn()}/>);fireEvent.doubleClick(screen.getByLabelText("Edit Print quantity"));fireEvent.change(screen.getByLabelText("Print quantity"),{target:{value:"abc"}});fireEvent.keyDown(screen.getByLabelText("Print quantity"),{key:"Enter"});expect(screen.getByRole("alert").textContent).toContain("positive")});
+
+test("initial consignment rows are not selected",()=>{vi.stubGlobal("fetch",vi.fn(()=>ok({})));render(<ConsignmentTable rows={[line()]} selected={new Set()} setSelected={vi.fn()} onOpen={vi.fn()} onChanged={vi.fn()}/>);expect((screen.getByLabelText("Select row") as HTMLInputElement).checked).toBe(false)});
+
+test("header selection sends only visible filtered line ids",async()=>{const fetchMock=vi.fn((_url:RequestInfo|URL,_init?:RequestInit)=>ok({updated:2}));vi.stubGlobal("fetch",fetchMock);render(<ConsignmentTable rows={[line("l1"),line("l2")]} selected={new Set()} setSelected={vi.fn()} onOpen={vi.fn()} onChanged={vi.fn()}/>);fireEvent.click(screen.getByLabelText("Select all visible"));await waitFor(()=>expect(fetchMock).toHaveBeenCalled());const body=JSON.parse(String(fetchMock.mock.calls[0][1]?.body));expect(body.line_ids).toEqual(["l1","l2"])});
+
+test("create consignment flow starts with marketplace and account",async()=>{const fetchMock=vi.fn((_url:RequestInfo|URL,_init?:RequestInit)=>ok(consignment));vi.stubGlobal("fetch",fetchMock);render(<CreateConsignment accounts={[account]} onCreated={vi.fn()} onClose={vi.fn()}/>);fireEvent.change(screen.getByLabelText("Account"),{target:{value:"a1"}});fireEvent.change(screen.getByLabelText("Consignment name"),{target:{value:"Week 32"}});fireEvent.click(screen.getByText("Continue"));await waitFor(()=>expect(fetchMock).toHaveBeenCalled());expect(String(fetchMock.mock.calls[0][1]?.body)).toContain('"account_id":"a1"')});
+
+test("row drawer opens without loading images until Images tab",async()=>{const fetchMock=vi.fn((_url:RequestInfo|URL,_init?:RequestInit)=>ok({...account,id:"p1",account,sku:"S1",title:"Pendant",brand:"MMS",mrp:799,category:"key_chain",extra_attributes:{},created_at:"2026-01-01",updated_at:"2026-01-01",identifiers:[],images:[]}));vi.stubGlobal("fetch",fetchMock);render(<ConsignmentDrawer line={line()} consignment={consignment} onClose={vi.fn()} onPrepare={vi.fn()}/>);expect(fetchMock).not.toHaveBeenCalled();fireEvent.click(screen.getByText("Images"));await waitFor(()=>expect(fetchMock).toHaveBeenCalledTimes(1));expect(String(fetchMock.mock.calls[0][0])).toContain("/inventory/p1")});
+
+test("Label Data displays source badges from resolved API",async()=>{const fetchMock=vi.fn((url:string)=>url.includes("address-profiles")?ok([]):ok({fields:{mrp:{value:799,source:"Catalog"},brand:{value:"MMS",source:"Consignment Override"}},address_profile:null}));vi.stubGlobal("fetch",fetchMock);render(<ConsignmentDrawer line={line()} consignment={consignment} onClose={vi.fn()} onPrepare={vi.fn()}/>);fireEvent.click(screen.getByText("Label Data"));await waitFor(()=>expect(screen.getByText("Catalog")).toBeTruthy());expect(screen.getByText("Consignment Override")).toBeTruthy()});
+
+test("409 conflict displays workstation refresh guidance",async()=>{vi.stubGlobal("fetch",vi.fn(()=>Promise.resolve(new Response(JSON.stringify({detail:{code:"CONSIMENT_LINE_CHANGED",message:"stale"}}),{status:409,headers:{"Content-Type":"application/json"}}))));render(<ConsignmentTable rows={[line()]} selected={new Set()} setSelected={vi.fn()} onOpen={vi.fn()} onChanged={vi.fn()}/>);fireEvent.doubleClick(screen.getByLabelText("Edit MRP"));fireEvent.change(screen.getByLabelText("MRP"),{target:{value:"899"}});fireEvent.keyDown(screen.getByLabelText("MRP"),{key:"Enter"});await waitFor(()=>expect(screen.getByRole("alert").textContent).toContain("another workstation"))});

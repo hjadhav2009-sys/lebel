@@ -19,3 +19,10 @@ Outbound Windows agent, printer profiles, spooler integration, and parity-tested
 ## Phase 4 — packing and PDF tools
 
 Adapters for the legacy packing/order parser and Flipkart PDF cropper after parity tests.
+# Phase 2 — Consignment Operations
+
+Phase 2 adds Amazon/Flipkart consignment sessions, account-scoped matching, structured validation, independent row overrides, operational address and label-format profiles, immutable print-job preparation, Print Queue, Printed/Reprint history, optimistic concurrency, and development-only completion simulation.
+
+It deliberately does not migrate desktop label rendering, raw PRN/TSPL transport, browser-direct printing, the packing parser, or PyMuPDF cropper logic. Those remain behind documented adapter boundaries. Phase 3 will connect prepared immutable jobs to an authenticated local printer agent and the validated renderer.
+
+Core distinctions: Catalog is not Consignment; Net Quantity is not Print Quantity; Prepared is not Printed; Reprint creates a new job; a new consignment starts fresh even when its source file and products appeared before.
