@@ -27,7 +27,7 @@ class PrintJobService:
         if any(line.print_quantity <= 0 for line in lines): raise PrintJobValidationError("INVALID_PRINT_QTY", "Print quantity must be positive.")
         consignment = lines[0].consignment
         job = PrintJob(consignment_id=consignment.id, account_id=consignment.account_id, marketplace=consignment.marketplace,
-            status="ready", printer_profile_id=printer_profile_id, renderer_version="phase2-snapshot-v1", created_by_id=actor_id)
+            status="ready", printer_profile_id=printer_profile_id, created_by_id=actor_id, is_test=test_labels)
         self.db.add(job); self.db.flush()
         resolver = ConsignmentLabelDataService(self.db)
         for line in lines:
@@ -59,10 +59,22 @@ class PrintJobService:
         if source_line_ids: sources = [line for line in sources if line.id in source_line_ids]
         if not sources: raise PrintJobValidationError("NO_SUCCESSFUL_LINES", "Choose successful historical lines to reprint.")
         replacement = PrintJob(consignment_id=job.consignment_id, account_id=job.account_id, marketplace=job.marketplace,
-            status="ready", printer_profile_id=job.printer_profile_id, renderer_version=job.renderer_version, created_by_id=actor_id)
+            status="ready", printer_profile_id=job.printer_profile_id, renderer_key=job.renderer_key, renderer_version=job.renderer_version,
+            layout_version=job.layout_version, created_by_id=actor_id)
         self.db.add(replacement); self.db.flush()
         for line in sources:
             self.db.add(PrintJobLine(print_job_id=replacement.id, consignment_line_id=line.consignment_line_id,
                 label_count=line.label_count, data_snapshot=deepcopy(line.data_snapshot), status="ready", source_print_job_line_id=line.id))
         self.db.add(PrintJobEvent(print_job_id=replacement.id, event_type="created", actor_id=actor_id, payload={"reprint_of": str(job.id), "mode": "exact_snapshot"}))
         return replacement
+
+    def confirm_physical_output(self, job: PrintJob, actor_id=None) -> PrintJob:
+        if job.status != "spooled": raise PrintJobValidationError("INVALID_PRINT_JOB_STATE", "Only a spooled job can be physically confirmed.")
+        now=datetime.now(timezone.utc); job.status="completed"; job.completed_at=now
+        for job_line in self.db.scalars(select(PrintJobLine).where(PrintJobLine.print_job_id==job.id)).all():
+            job_line.status,job_line.result,job_line.completed_at="completed","success",now
+            if job_line.consignment_line_id:
+                source=self.db.get(ConsignmentLine,job_line.consignment_line_id)
+                if source: source.workflow_state,source.last_printed_at,source.selected_for_print="printed",now,False;source.successful_print_count+=1
+        self.db.add(PrintJobEvent(print_job_id=job.id,event_type="completed",actor_id=actor_id,payload={"signal":"operator_confirmed_physical_output"}))
+        return job

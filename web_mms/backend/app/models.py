@@ -281,6 +281,20 @@ class PrintJob(TimestampMixin, Base):
     created_by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     is_simulation: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_test: Mapped[bool] = mapped_column(Boolean, default=False)
+    renderer_key: Mapped[str | None] = mapped_column(String(100))
+    layout_version: Mapped[int | None] = mapped_column(Integer)
+    claimed_by_agent_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("print_agents.id"))
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    claim_token_hash: Mapped[str | None] = mapped_column(String(64))
+    idempotency_key: Mapped[str | None] = mapped_column(String(80), unique=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    spool_job_id: Mapped[str | None] = mapped_column(String(120))
+    transport_status: Mapped[str | None] = mapped_column(String(40), index=True)
+    transport_error_code: Mapped[str | None] = mapped_column(String(80))
+    transport_error_message: Mapped[str | None] = mapped_column(Text)
     lines: Mapped[list["PrintJobLine"]] = relationship(cascade="all, delete-orphan")
 
 
@@ -307,15 +321,53 @@ class PrintJobEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class PrintArtifact(Base):
+    __tablename__ = "print_artifacts"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    print_job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("print_jobs.id", ondelete="CASCADE"), index=True)
+    artifact_type: Mapped[str] = mapped_column(String(40), index=True)
+    renderer_key: Mapped[str] = mapped_column(String(100))
+    renderer_version: Mapped[str] = mapped_column(String(40))
+    layout_version: Mapped[int] = mapped_column(Integer)
+    printer_profile_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("printer_profiles.id"))
+    sha256: Mapped[str] = mapped_column(String(64), index=True)
+    byte_size: Mapped[int] = mapped_column(Integer)
+    storage_key: Mapped[str] = mapped_column(String(255), unique=True)
+    content_type: Mapped[str] = mapped_column(String(100))
+    encoding: Mapped[str | None] = mapped_column(String(40))
+    status: Mapped[str] = mapped_column(String(30), default="ready")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    metadata_: Mapped[dict] = mapped_column("metadata", JSON, default=dict)
+    __table_args__ = (UniqueConstraint("print_job_id", "artifact_type", "renderer_key", "renderer_version", "layout_version", "printer_profile_id", name="uq_print_artifact_compilation"),)
+
+
 class PrintAgent(TimestampMixin, Base):
     __tablename__ = "print_agents"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(120))
     machine_name: Mapped[str] = mapped_column(String(180), unique=True)
-    token_hash: Mapped[str] = mapped_column(String(255))
+    token_hash: Mapped[str] = mapped_column(String(255), index=True)
     status: Mapped[str] = mapped_column(String(30), default="offline", index=True)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     version: Mapped[str | None] = mapped_column(String(40))
+    token_hint: Mapped[str | None] = mapped_column(String(12))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    windows_version: Mapped[str | None] = mapped_column(String(120))
+    uptime_seconds: Mapped[int | None] = mapped_column(Integer)
+    current_job_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("print_jobs.id"))
+    last_successful_job_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("print_jobs.id"))
+    last_error: Mapped[str | None] = mapped_column(Text)
+
+
+class AgentPairingCode(Base):
+    __tablename__ = "agent_pairing_codes"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    code_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class Printer(TimestampMixin, Base):
@@ -327,6 +379,10 @@ class Printer(TimestampMixin, Base):
     dpi: Mapped[int] = mapped_column(Integer, default=203)
     status: Mapped[str] = mapped_column(String(30), default="offline", index=True)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    port_name: Mapped[str | None] = mapped_column(String(180))
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_network: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     __table_args__ = (UniqueConstraint("agent_id", "name"),)
 
 
@@ -343,6 +399,36 @@ class PrinterProfile(TimestampMixin, Base):
     darkness: Mapped[int | None] = mapped_column(Integer)
     renderer: Mapped[str] = mapped_column(String(80))
     config: Mapped[dict] = mapped_column(JSON, default=dict)
+    layout_version: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class RendererProfileApproval(Base):
+    __tablename__ = "renderer_profile_approvals"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    printer_profile_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("printer_profiles.id", ondelete="CASCADE"), index=True)
+    renderer_key: Mapped[str] = mapped_column(String(100))
+    renderer_version: Mapped[str] = mapped_column(String(40))
+    layout_version: Mapped[int] = mapped_column(Integer)
+    format_key: Mapped[str | None] = mapped_column(String(100))
+    marketplace: Mapped[Marketplace] = mapped_column(Enum(Marketplace, name="marketplace"))
+    approved_by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    approved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    test_print_job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("print_jobs.id"))
+    notes: Mapped[str | None] = mapped_column(Text)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (Index("ix_renderer_approval_lookup", "printer_profile_id", "renderer_key", "renderer_version", "layout_version", "format_key", "revoked_at"),)
+
+
+class BarcodeVerification(Base):
+    __tablename__ = "barcode_verifications"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    print_job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("print_jobs.id", ondelete="CASCADE"), index=True)
+    print_job_line_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("print_job_lines.id"))
+    expected_value: Mapped[str] = mapped_column(String(180))
+    scanned_value: Mapped[str] = mapped_column(String(180))
+    passed: Mapped[bool] = mapped_column(Boolean)
+    verified_by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    verified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class ProfileBase(TimestampMixin):

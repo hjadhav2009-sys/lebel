@@ -21,10 +21,13 @@ services:
       MMS_DATABASE_URL: postgresql+psycopg://mms:mms@db:5432/mms
       MMS_SECRET_KEY: local-docker-development-key
       MMS_CORS_ORIGINS: http://localhost:5173
+      MMS_PRINT_TRANSPORT_ENABLED: "false"
+      MMS_PRINT_ARTIFACT_ROOT: /runtime/print_artifacts
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/app
+      - mms_print_artifacts:/runtime/print_artifacts
     depends_on:
       db:
         condition: service_healthy
@@ -32,3 +35,4 @@ services:
 
 volumes:
   mms_postgres:
+  mms_print_artifacts:

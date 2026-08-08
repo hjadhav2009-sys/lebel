@@ -57,3 +57,23 @@ jobs:
       - run: npm test
       - run: npm run typecheck
       - run: npm run build
+
+  windows-print-agent:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: web_mms/print_agent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: "pip" }
+      - run: pip install -e ".[windows,dev]"
+      - run: pytest -q
+      - run: ruff check mms_print_agent tests
+      - run: pyright mms_print_agent
+      - name: Build standalone Windows agent
+        run: pyinstaller --noconfirm --clean --onefile --name MMSPrintAgent agent_main.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MMSPrintAgent-windows
+          path: web_mms/print_agent/dist/MMSPrintAgent.exe

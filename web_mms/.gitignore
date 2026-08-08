@@ -9,3 +9,11 @@ backend/.ruff_cache/
 backend/**/__pycache__/
 backend/**/*.pyc
 .env
+runtime/
+print_agent/.venv/
+print_agent/build/
+print_agent/dist/
+print_agent/*.spec
+print_agent/**/*.log
+print_agent/.env
+print_agent/**/agent.token
