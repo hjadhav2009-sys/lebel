@@ -40,7 +40,7 @@ def test_stable_business_keys_and_unchanged_hash():
     first = NormalizedProduct("amazon", " SKU-1 ", mrp="799.00")
     second = NormalizedProduct("amazon", "sku-1", mrp="799.00")
     assert first.business_key() == second.business_key()
-    assert first.row_hash() != second.row_hash()  # source values remain auditable
+    assert first.row_hash() == second.row_hash()  # cosmetic SKU differences do not trigger updates
 
 
 def test_changed_row_update_classification():
