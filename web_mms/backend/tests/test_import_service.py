@@ -23,6 +23,7 @@ def test_changed_images_and_identifiers_persist_then_reimport_is_unchanged():
         changed = NormalizedProduct("amazon", "SKU-1", identifiers={"asin":"NEW","fnsku":"X001"}, images=["https://img/new.jpg"], source_template="template-a")
         CatalogImportService(session).apply(make_import(session, account, "b"), [(2, {"SKU":"SKU-1"}, changed)])
         product = session.scalar(select(CatalogProduct))
+        assert product is not None
         assert {(i.kind, i.value) for i in product.identifiers} >= {("asin","NEW"),("fnsku","X001")}
         assert any(image.url == "https://img/new.jpg" and image.status == "available" for image in product.images)
         third = make_import(session, account, "c")
@@ -42,4 +43,5 @@ def test_multiple_amazon_templates_enrich_without_deleting_images():
         CatalogImportService(session).apply(make_import(session, account, "d"), [(2, {}, one)])
         CatalogImportService(session).apply(make_import(session, account, "e"), [(2, {}, two)])
         product = session.scalar(select(CatalogProduct))
+        assert product is not None
         assert {image.url for image in product.images} == {"https://img/a.jpg", "https://img/b.jpg"}

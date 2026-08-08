@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models import AuditEvent, ImportError
-from app.schemas import ErrorPage
+from app.schemas import ErrorOut, ErrorPage
 
 router = APIRouter(prefix="/errors", tags=["errors"])
 
@@ -20,7 +20,7 @@ def list_errors(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=
     if resolved is not None: filters.append(ImportError.resolved == resolved)
     total = db.scalar(select(func.count()).select_from(ImportError).where(*filters)) or 0
     items = db.scalars(select(ImportError).where(*filters).order_by(ImportError.created_at.desc()).offset((page - 1) * page_size).limit(page_size)).all()
-    return ErrorPage(items=list(items), total=total, page=page, page_size=page_size)
+    return ErrorPage(items=[ErrorOut.model_validate(item) for item in items], total=total, page=page, page_size=page_size)
 
 
 @router.post("/{error_id}/resolve")
