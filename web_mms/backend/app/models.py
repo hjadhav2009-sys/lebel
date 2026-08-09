@@ -383,6 +383,7 @@ class Printer(TimestampMixin, Base):
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)
     is_network: Mapped[bool] = mapped_column(Boolean, default=False)
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    last_error: Mapped[str | None] = mapped_column(Text)
     __table_args__ = (UniqueConstraint("agent_id", "name"),)
 
 
@@ -416,6 +417,7 @@ class RendererProfileApproval(Base):
     test_print_job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("print_jobs.id"))
     notes: Mapped[str | None] = mapped_column(Text)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    font_fingerprint: Mapped[str | None] = mapped_column(String(64))
     __table_args__ = (Index("ix_renderer_approval_lookup", "printer_profile_id", "renderer_key", "renderer_version", "layout_version", "format_key", "revoked_at"),)
 
 

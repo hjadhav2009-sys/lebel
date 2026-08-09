@@ -4,6 +4,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.models import AddressProfile, ConsignmentIssue, ConsignmentLine, LabelFormatProfile, Marketplace
+from app.services.label_field_resolution import CanonicalLabelFieldResolver, canonical_field_key
 
 
 class ConsignmentValidationService:
@@ -28,21 +29,15 @@ class ConsignmentValidationService:
         if line.format_key:
             profile = self.db.scalar(select(LabelFormatProfile).where(LabelFormatProfile.key == line.format_key, LabelFormatProfile.is_active.is_(True), (LabelFormatProfile.account_id == line.consignment.account_id) | (LabelFormatProfile.account_id.is_(None))))
             if profile:
-                available = self._available(line)
+                resolver=CanonicalLabelFieldResolver(line)
                 for field in profile.required_fields:
-                    if not available.get(str(field)):
-                        problems.append(("blocking", "MISSING_REQUIRED_FIELD", str(field), f"Required label field '{field}' is missing."))
+                    resolved=resolver.resolve(field)
+                    if resolved.source=="Missing":
+                        code="MISSING_DIMENSIONS" if canonical_field_key(field)=="dimensions" else "MISSING_REQUIRED_FIELD"
+                        problems.append(("blocking",code,resolved.key,f"Required label field '{resolved.display_name}' is missing."))
         issues = [ConsignmentIssue(consignment_id=line.consignment_id, consignment_line_id=line.id, severity=s, code=c, field=f, message=m) for s, c, f, m in problems]
         self.db.add_all(issues)
         line.error_count = len(issues)
         if any(i.severity == "blocking" for i in issues) and line.workflow_state == "to_print": line.workflow_state = "blocked"
         elif not issues and line.workflow_state == "blocked": line.workflow_state = "to_print"
         return issues
-
-    @staticmethod
-    def _available(line: ConsignmentLine) -> dict:
-        product = line.product
-        values = dict(product.extra_attributes if product else {})
-        values.update({"Brand": line.label_overrides.get("brand") or line.brand_snapshot, "Model Number": line.label_overrides.get("model_number"), "Model Name": line.label_overrides.get("model_name")})
-        values.update(line.label_overrides.get("fields", {}))
-        return values

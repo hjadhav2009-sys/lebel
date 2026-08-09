@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.auth import CurrentPrincipal, require_roles
 from app.core.config import get_settings
 from app.db.session import get_db
 from app.models import Marketplace, PrintAgent, Printer, PrintJob, PrintJobEvent, PrintJobLine
@@ -29,15 +30,17 @@ def _summary(job: PrintJob, db: Session):
 
 
 @router.post("", status_code=201)
-def create_job(payload: PrintJobCreate, db: Session = Depends(get_db)):
-    try: job = PrintJobService(db).prepare(payload.consignment_id, printer_profile_id=payload.printer_profile_id, line_ids=payload.line_ids, test_labels=payload.test_labels); db.commit(); db.refresh(job)
+def create_job(payload: PrintJobCreate, principal:CurrentPrincipal=Depends(require_roles("Admin","QC","Packing","Print Operator")), db: Session = Depends(get_db)):
+    if payload.test_labels and not principal.roles.intersection({"Admin","QC"}):
+        raise HTTPException(403,detail={"code":"ACCESS_DENIED","message":"Test print preparation requires Admin or QC."})
+    try: job = PrintJobService(db).prepare(payload.consignment_id,actor_id=principal.id, printer_profile_id=payload.printer_profile_id, line_ids=payload.line_ids, test_labels=payload.test_labels); db.commit(); db.refresh(job)
     except PrintJobValidationError as exc: raise HTTPException(422, detail={"code": exc.code, "message": exc.message}) from exc
     return _summary(job, db)
 
 
 @router.get("")
 def list_jobs(status: str | None = None, marketplace: str | None = None, account_id: UUID | None = None,
-    page: int = Query(1, ge=1), page_size: int = Query(25, ge=1, le=100), db: Session = Depends(get_db)):
+    page: int = Query(1, ge=1), page_size: int = Query(25, ge=1, le=100), _:CurrentPrincipal=Depends(require_roles("Admin","QC","Packing","Print Operator")), db: Session = Depends(get_db)):
     query = select(PrintJob)
     if status: query = query.where(PrintJob.status == status)
     if marketplace: query = query.where(PrintJob.marketplace == Marketplace(marketplace.casefold()))
@@ -49,7 +52,7 @@ def list_jobs(status: str | None = None, marketplace: str | None = None, account
 
 
 @router.get("/{job_id}")
-def get_job(job_id: UUID, db: Session = Depends(get_db)):
+def get_job(job_id: UUID, _:CurrentPrincipal=Depends(require_roles("Admin","QC","Packing","Print Operator")), db: Session = Depends(get_db)):
     job = db.get(PrintJob, job_id)
     if not job: raise HTTPException(404, detail={"code": "PRINT_JOB_NOT_FOUND", "message": "Print job not found."})
     lines = list(db.scalars(select(PrintJobLine).where(PrintJobLine.print_job_id == job.id).order_by(PrintJobLine.id)).all())
@@ -59,34 +62,34 @@ def get_job(job_id: UUID, db: Session = Depends(get_db)):
 
 
 @router.post("/{job_id}/simulate-success")
-def simulate_success(job_id: UUID, db: Session = Depends(get_db)):
+def simulate_success(job_id: UUID, principal:CurrentPrincipal=Depends(require_roles("Admin")), db: Session = Depends(get_db)):
     job = db.get(PrintJob, job_id)
     if not job: raise HTTPException(404, detail={"code": "PRINT_JOB_NOT_FOUND", "message": "Print job not found."})
-    try: PrintJobService(db).simulate_success(job, enabled=get_settings().enable_print_simulation, is_admin=True); db.commit()
+    try: PrintJobService(db).simulate_success(job,actor_id=principal.id, enabled=get_settings().enable_print_simulation, is_admin="Admin" in principal.roles); db.commit()
     except PrintJobValidationError as exc: raise HTTPException(403, detail={"code": exc.code, "message": exc.message}) from exc
     return {"id": str(job.id), "status": job.status, "simulation": True}
 
 
 @router.post("/{job_id}/reprint", status_code=201)
-def reprint(job_id: UUID, payload: ReprintRequest, db: Session = Depends(get_db)):
+def reprint(job_id: UUID, payload: ReprintRequest, principal:CurrentPrincipal=Depends(require_roles("Admin","Packing","Print Operator")), db: Session = Depends(get_db)):
     job = db.get(PrintJob, job_id)
     if not job: raise HTTPException(404, detail={"code": "PRINT_JOB_NOT_FOUND", "message": "Print job not found."})
-    try: replacement = PrintJobService(db).reprint_exact(job, source_line_ids=payload.source_line_ids); db.commit(); db.refresh(replacement)
+    try: replacement = PrintJobService(db).reprint_exact(job,actor_id=principal.id, source_line_ids=payload.source_line_ids); db.commit(); db.refresh(replacement)
     except PrintJobValidationError as exc: raise HTTPException(422, detail={"code": exc.code, "message": exc.message}) from exc
     return _summary(replacement, db)
 
 
 @router.post("/{job_id}/compile")
-def compile_job(job_id: UUID, db: Session = Depends(get_db)):
+def compile_job(job_id: UUID, principal:CurrentPrincipal=Depends(require_roles("Admin","QC","Packing","Print Operator")), db: Session = Depends(get_db)):
     job = db.get(PrintJob, job_id)
     if not job: raise HTTPException(404, detail={"code": "PRINT_JOB_NOT_FOUND"})
-    try: artifact = PrintCompilationService(db).compile(job); db.commit(); db.refresh(artifact)
+    try: artifact = PrintCompilationService(db).compile(job,actor_id=principal.id); db.commit(); db.refresh(artifact)
     except PrintCompilationError as exc: db.commit(); raise HTTPException(422, detail={"code": exc.code, "message": exc.message, "diagnostics": exc.diagnostics}) from exc
     return {"artifact_id": str(artifact.id), "sha256": artifact.sha256, "byte_size": artifact.byte_size, "status": job.status}
 
 
 @router.get("/{job_id}/preview")
-def preview(job_id: UUID, db: Session = Depends(get_db)):
+def preview(job_id: UUID, _:CurrentPrincipal=Depends(require_roles("Admin","QC","Packing","Print Operator")), db: Session = Depends(get_db)):
     job = db.get(PrintJob, job_id)
     if not job: raise HTTPException(404, detail={"code": "PRINT_JOB_NOT_FOUND"})
     try: data, diagnostics = PrintCompilationService(db).preview(job)
@@ -95,41 +98,44 @@ def preview(job_id: UUID, db: Session = Depends(get_db)):
 
 
 @router.get("/{job_id}/diagnostics")
-def diagnostics(job_id: UUID, db: Session = Depends(get_db)):
+def diagnostics(job_id: UUID, _:CurrentPrincipal=Depends(require_roles("Admin","QC")), db: Session = Depends(get_db)):
     job = db.get(PrintJob, job_id)
     if not job: raise HTTPException(404, detail={"code": "PRINT_JOB_NOT_FOUND"})
     return PrintCompilationService(db).diagnostics(job)
 
 
 @router.post("/{job_id}/verify-barcode", status_code=201)
-def verify_barcode(job_id: UUID, payload: BarcodeVerificationWrite, db: Session = Depends(get_db)):
+def verify_barcode(job_id: UUID, payload: BarcodeVerificationWrite, principal:CurrentPrincipal=Depends(require_roles("Admin","QC")), db: Session = Depends(get_db)):
     job = db.get(PrintJob, job_id)
     if not job: raise HTTPException(404, detail={"code": "PRINT_JOB_NOT_FOUND"})
-    row = RendererApprovalService(db).verify_barcode(job, payload.expected_value, payload.scanned_value, line_id=payload.print_job_line_id); db.commit(); db.refresh(row)
+    line=db.get(PrintJobLine,payload.print_job_line_id)
+    if not line or line.print_job_id!=job.id:raise HTTPException(422,detail={"code":"PRINT_JOB_LINE_MISMATCH","message":"Verification line does not belong to this job."})
+    expected=line.data_snapshot.get("fnsku") if job.marketplace==Marketplace.AMAZON else (line.data_snapshot.get("fsn") or line.data_snapshot.get("listing_id"))
+    row = RendererApprovalService(db).verify_barcode(job,str(expected or ""),payload.scanned_value,line_id=line.id,actor_id=principal.id); db.commit(); db.refresh(row)
     return {"id": str(row.id), "passed": row.passed, "expected": row.expected_value, "scanned": row.scanned_value}
 
 
 @router.post("/{job_id}/confirm-physical-output")
-def confirm_physical_output(job_id: UUID, db: Session = Depends(get_db)):
+def confirm_physical_output(job_id: UUID, principal:CurrentPrincipal=Depends(require_roles("Admin","Packing","Print Operator")), db: Session = Depends(get_db)):
     job = db.get(PrintJob, job_id)
     if not job: raise HTTPException(404, detail={"code": "PRINT_JOB_NOT_FOUND"})
-    try: PrintJobService(db).confirm_physical_output(job); db.commit()
+    try: PrintJobService(db).confirm_physical_output(job,actor_id=principal.id); db.commit()
     except PrintJobValidationError as exc: raise HTTPException(422, detail={"code": exc.code, "message": exc.message}) from exc
     return {"id": str(job.id), "status": job.status, "signal": "operator_confirmed_physical_output"}
 
 
 @router.post("/{job_id}/cancel")
-def cancel(job_id: UUID, db: Session = Depends(get_db)):
+def cancel(job_id: UUID, principal:CurrentPrincipal=Depends(require_roles("Admin","Packing","Print Operator")), db: Session = Depends(get_db)):
     job=db.get(PrintJob,job_id)
     if not job: raise HTTPException(404,detail={"code":"PRINT_JOB_NOT_FOUND"})
-    try: transition(db,job,"cancelled");db.commit()
+    try: transition(db,job,"cancelled",actor_id=principal.id);db.commit()
     except InvalidPrintJobState as exc: raise HTTPException(409,detail={"code":"CANCELLATION_NOT_SAFE","message":"Cancellation is not guaranteed after agent claim or spooling."}) from exc
     return {"id":str(job.id),"status":job.status}
 
 
 @printers_router.get("")
-def list_printers(db: Session = Depends(get_db)):
+def list_printers(_:CurrentPrincipal=Depends(require_roles("Admin","QC","Packing","Print Operator")),db: Session = Depends(get_db)):
     rows = db.execute(select(Printer, PrintAgent).join(PrintAgent, PrintAgent.id == Printer.agent_id)).all()
     return [{"id": str(printer.id), "name": printer.name, "driver": printer.driver_name, "port": printer.port_name, "dpi": printer.dpi, "status": printer.status,
         "enabled": printer.is_enabled, "default": printer.is_default, "network": printer.is_network, "agent_id": str(agent.id), "agent": agent.name,
-        "agent_status": agent.status, "machine": agent.machine_name, "last_seen_at": printer.last_seen_at} for printer, agent in rows]
+        "agent_status": agent.status, "machine": agent.machine_name, "last_seen_at": printer.last_seen_at,"last_error":printer.last_error} for printer, agent in rows]

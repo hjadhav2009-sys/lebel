@@ -123,6 +123,24 @@ class CurrentUserOut(BaseModel):
     development: bool = False
 
 
+class LoginRequest(BaseModel):
+    email: str
+    password: str = Field(min_length=8,max_length=128)
+
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=12,max_length=128)
+
+
+class UserWrite(BaseModel):
+    email: str
+    display_name: str = Field(min_length=2,max_length=120)
+    password: str = Field(default="",max_length=128)
+    roles: list[Literal["Admin","QC","Packing","Print Operator"]]
+    is_active: bool=True
+
+
 class ErrorOut(BaseModel):
     id: UUID
     created_at: datetime
@@ -234,7 +252,8 @@ class DiscoveredPrinter(BaseModel):
     driver_name: str = "Unknown"
     port_name: str | None = None
     dpi: int = Field(default=203, ge=100, le=1200)
-    status: str = "online"
+    status: Literal["ready","offline","error","paper_out","paused","unknown"] = "unknown"
+    last_error: str | None = None
     is_default: bool = False
     is_network: bool = False
 
@@ -270,6 +289,5 @@ class RendererApprovalWrite(BaseModel):
 
 
 class BarcodeVerificationWrite(BaseModel):
-    print_job_line_id: UUID | None = None
-    expected_value: str
+    print_job_line_id: UUID
     scanned_value: str

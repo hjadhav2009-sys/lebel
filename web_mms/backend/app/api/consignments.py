@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.auth import CurrentPrincipal,require_roles
 from app.db.session import get_db
 from app.models import AuditEvent, Consignment, ConsignmentIssue, ConsignmentLine, Marketplace, MarketplaceAccount, PrintJob, PrintJobLine
 from app.schemas import BulkSelection, BulkStatus, ConsignmentCreate, ConsignmentLinePatch, ConsignmentPatch
@@ -141,7 +142,7 @@ def printed_lines(consignment_id: UUID, page: int = Query(1, ge=1), page_size: i
 
 
 @line_router.patch("/{line_id}")
-def patch_line(line_id: UUID, payload: ConsignmentLinePatch, db: Session = Depends(get_db)):
+def patch_line(line_id: UUID, payload: ConsignmentLinePatch, db: Session = Depends(get_db), principal:CurrentPrincipal=Depends(require_roles("Admin","Packing","Print Operator"))):
     line = db.scalar(select(ConsignmentLine).where(ConsignmentLine.id == line_id).options(selectinload(ConsignmentLine.product), selectinload(ConsignmentLine.consignment).selectinload(Consignment.account)))
     if not line: raise HTTPException(404, detail={"code": "CONSIGNMENT_LINE_NOT_FOUND", "message": "Line not found."})
     if line.version != payload.expected_version: raise HTTPException(409, detail={"code": "CONSIMENT_LINE_CHANGED", "message": "This row changed on another workstation. Refresh row."})
@@ -162,7 +163,8 @@ def patch_line(line_id: UUID, payload: ConsignmentLinePatch, db: Session = Depen
     ConsignmentValidationService(db).validate(line)
     audit_old = str(old) if isinstance(old, Decimal) else old
     audit_new = str(value) if isinstance(value, Decimal) else value
-    db.add(AuditEvent(entity_type="consignment_line", entity_id=str(line.id), action="manual_override", changes={payload.field: {"old": audit_old, "new": audit_new}}, context={"consignment_line_id": str(line.id)})); db.commit()
+    actor_id=principal.id if isinstance(principal,CurrentPrincipal) else None
+    db.add(AuditEvent(actor_id=actor_id,entity_type="consignment_line", entity_id=str(line.id), action="manual_override", changes={payload.field: {"old": audit_old, "new": audit_new}}, context={"consignment_line_id": str(line.id)})); db.commit()
     return _line_dict(line)
 
 

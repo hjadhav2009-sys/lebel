@@ -212,4 +212,36 @@ def test_27_format_required_fields_are_validated(db):
 def test_28_model_name_and_model_number_remain_distinct(db):
     owner=account(db); address(db,owner); catalog=product(db,owner,"S1"); batch=consignment(db,owner); line=printable_line(db,batch,catalog,label_overrides={"fields":{"Model Name":"Pendant","Model Number":"PN-7"}})
     fields=ConsignmentLabelDataService(db).resolve(line)["fields"]
-    assert fields["Model Name"]["value"]=="Pendant" and fields["Model Number"]["value"]=="PN-7"
+    assert fields["model_name"]["value"]=="Pendant" and fields["model_number"]["value"]=="PN-7"
+
+
+FORMAT_REQUIRED={
+    "key_chain":["brand","model_number","comment","color"],
+    "pendant_locket":["brand","model_number","plating","brand_color","body_material"],
+    "bangle_bracelet_armlet":["brand","model_number","bangle_size","diameter","color","pack_of"],
+    "earring":["brand","model_number","sales_package","type","color"],
+    "jewellery_set":["brand","model_number","sales_package_id","color"],
+    "necklace_chain":["brand","base_material","type","model_number","color"],
+    "car_hanging_ornament":["brand","model_name","model_number","color"],
+}
+
+
+@pytest.mark.parametrize(("format_key","required"),FORMAT_REQUIRED.items())
+def test_29_catalog_extras_validate_and_reach_snapshot_for_every_flipkart_format(db,format_key,required):
+    owner=account(db,Marketplace.FLIPKART);address(db,owner);extras={key.replace("_"," "):f"value-{key}" for key in required};extras["dimensions"]="85mm*70mm*8mm"
+    catalog=product(db,owner,"S1",category=format_key,identifiers={"fsn":"F1"},extras=extras);batch=consignment(db,owner);line=printable_line(db,batch,catalog,format_key=format_key,print_quantity=5,net_quantity_value=2)
+    all_required=[*required,"dimensions","mrp","generic_name"]
+    db.add(LabelFormatProfile(name=format_key,key=format_key,display_name=format_key,marketplace=Marketplace.FLIPKART,required_fields=all_required,field_order=all_required,config={}));db.flush()
+    assert ConsignmentValidationService(db).validate(line)==[]
+    snapshot=ConsignmentLabelDataService(db).snapshot(line)
+    assert snapshot["format"]==format_key and snapshot["fsn"]=="FSN1" and snapshot["print_quantity"]==5
+    assert snapshot["label_fields"]["dimensions"]=="85mm*70mm*8mm" and snapshot["field_sources"]["dimensions"]=="Catalog"
+    assert snapshot["net_quantity"]=={"value":2,"unit":"N"} and snapshot["generic_name"]==format_key
+    for key in required:assert snapshot["label_fields"][key]
+    if format_key=="car_hanging_ornament":assert snapshot["label_fields"]["model_name"]!=snapshot["label_fields"]["model_number"]
+
+
+def test_30_missing_dimensions_has_specific_blocking_code(db):
+    owner=account(db,Marketplace.FLIPKART);address(db,owner);catalog=product(db,owner,"S1",identifiers={"fsn":"F1"});batch=consignment(db,owner);line=printable_line(db,batch,catalog)
+    db.add(LabelFormatProfile(name="Key",key="key_chain",display_name="Key",marketplace=Marketplace.FLIPKART,required_fields=["Dimensions"],field_order=[],config={}));db.flush()
+    assert any(issue.code=="MISSING_DIMENSIONS" for issue in ConsignmentValidationService(db).validate(line))

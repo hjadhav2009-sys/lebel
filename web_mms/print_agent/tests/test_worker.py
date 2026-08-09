@@ -2,7 +2,7 @@ import hashlib
 
 import pytest
 
-from mms_print_agent.spooler import FakeSpooler, SpoolError
+from mms_print_agent.spooler import FakeSpooler, SpoolError, normalize_printer_status
 from mms_print_agent.worker import IntegrityError, PrintWorker
 
 
@@ -41,3 +41,8 @@ def test_transport_disabled_never_spools():
     api, spooler = FakeApi(), FakeSpooler()
     assert PrintWorker(api, spooler, transport_allowed=False).process(claim(api.data)) == "disabled"
     assert not spooler.writes
+
+
+@pytest.mark.parametrize(("flags","status"),[(0,"ready"),(0x10,"paper_out"),(0x1,"paused"),(0x80,"offline"),(0x2,"error"),(0x100,"unknown")])
+def test_windows_status_flags_are_normalized(flags,status):
+    assert normalize_printer_status(flags)[0] == status
