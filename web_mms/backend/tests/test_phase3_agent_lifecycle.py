@@ -60,7 +60,8 @@ def test_barcode_expected_value_is_server_derived_and_line_is_job_scoped(db):
     result=verify_barcode(job.id,BarcodeVerificationWrite(print_job_line_id=line.id,scanned_value="SERVER-FNSKU"),principal,db)
     assert result["passed"] is True and result["expected"]=="SERVER-FNSKU"
     with pytest.raises(HTTPException) as caught:verify_barcode(job.id,BarcodeVerificationWrite(print_job_line_id=foreign.id,scanned_value="OTHER"),principal,db)
-    assert caught.value.detail["code"]=="PRINT_JOB_LINE_MISMATCH"
+    detail=caught.value.detail;assert isinstance(detail,dict)
+    assert detail["code"]=="PRINT_JOB_LINE_MISMATCH"
 
 
 def test_simulation_and_wrong_format_cannot_approve(db):
