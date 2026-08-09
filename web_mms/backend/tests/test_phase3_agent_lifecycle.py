@@ -1,15 +1,19 @@
 import hashlib
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.db.base import Base
 from app.models import (BarcodeVerification, Marketplace, MarketplaceAccount, PrintAgent, PrintArtifact,
-    Printer, PrinterProfile, PrintJob)
+    Printer, PrinterProfile, PrintJob, PrintJobLine)
 from app.services.agent_auth_service import AgentAuthenticationError, AgentAuthService
 from app.services.agent_job_service import AgentJobService
 from app.services.renderer_approval_service import RendererApprovalError, RendererApprovalService
+from app.api.print_queue import verify_barcode
+from app.core.auth import CurrentPrincipal
+from app.schemas import BarcodeVerificationWrite
 
 
 @pytest.fixture
@@ -29,7 +33,7 @@ def test_pairing_code_is_one_time_and_agent_token_is_revocable(db):
 
 def print_setup(db):
     account=MarketplaceAccount(marketplace=Marketplace.AMAZON,name="Primary");agent=PrintAgent(name="Desk",machine_name="PC",token_hash="hash")
-    db.add_all([account,agent]);db.flush();printer=Printer(agent_id=agent.id,name="TSC TE244",driver_name="TSC",dpi=203,status="online",is_enabled=True)
+    db.add_all([account,agent]);db.flush();printer=Printer(agent_id=agent.id,name="TSC TE244",driver_name="TSC",dpi=203,status="ready",is_enabled=True)
     db.add(printer);db.flush();profile=PrinterProfile(printer_id=printer.id,marketplace=Marketplace.AMAZON,media_width_mm=101.5,media_height_mm=50,gap_mm=2,renderer="amazon_dynamic_tspl_v1",config={"approved_dpi":203})
     db.add(profile);db.flush();return account,agent,printer,profile
 
@@ -43,8 +47,26 @@ def test_only_assigned_agent_can_claim_once_and_claim_contains_immutable_artifac
 
 
 def test_renderer_approval_requires_completed_test_and_passing_scan(db):
-    account,_,_,profile=print_setup(db);job=PrintJob(account_id=account.id,marketplace=Marketplace.AMAZON,status="completed",printer_profile_id=profile.id,is_test=True)
-    db.add(job);db.flush();service=RendererApprovalService(db)
+    account,_,_,profile=print_setup(db);job=PrintJob(account_id=account.id,marketplace=Marketplace.AMAZON,status="completed",printer_profile_id=profile.id,is_test=True,renderer_key="amazon_dynamic_tspl_v1",renderer_version="1.0.0",layout_version=1)
+    db.add(job);db.flush();line=PrintJobLine(print_job_id=job.id,label_count=1,data_snapshot={"fnsku":"X001"});db.add(line);db.flush();service=RendererApprovalService(db)
     with pytest.raises(RendererApprovalError): service.approve(profile,job,format_key="key_chain")
-    db.add(BarcodeVerification(print_job_id=job.id,expected_value="X001",scanned_value="X001",passed=True));db.flush()
+    db.add(BarcodeVerification(print_job_id=job.id,print_job_line_id=line.id,expected_value="X001",scanned_value="X001",passed=True));db.flush()
     approval=service.approve(profile,job,format_key="key_chain");assert approval.renderer_version=="1.0.0" and approval.layout_version==1
+
+
+def test_barcode_expected_value_is_server_derived_and_line_is_job_scoped(db):
+    account,_,_,_=print_setup(db);job=PrintJob(account_id=account.id,marketplace=Marketplace.AMAZON,status="completed");other=PrintJob(account_id=account.id,marketplace=Marketplace.AMAZON,status="completed")
+    db.add_all([job,other]);db.flush();line=PrintJobLine(print_job_id=job.id,label_count=1,data_snapshot={"fnsku":"SERVER-FNSKU"});foreign=PrintJobLine(print_job_id=other.id,label_count=1,data_snapshot={"fnsku":"OTHER"});db.add_all([line,foreign]);db.flush();principal=CurrentPrincipal(None,"qc@example.com","QC",frozenset({"QC"}))
+    result=verify_barcode(job.id,BarcodeVerificationWrite(print_job_line_id=line.id,scanned_value="SERVER-FNSKU"),principal,db)
+    assert result["passed"] is True and result["expected"]=="SERVER-FNSKU"
+    with pytest.raises(HTTPException) as caught:verify_barcode(job.id,BarcodeVerificationWrite(print_job_line_id=foreign.id,scanned_value="OTHER"),principal,db)
+    assert caught.value.detail["code"]=="PRINT_JOB_LINE_MISMATCH"
+
+
+def test_simulation_and_wrong_format_cannot_approve(db):
+    account,_,_,profile=print_setup(db);profile.marketplace=Marketplace.FLIPKART;profile.renderer="flipkart_hybrid_tspl_v1"
+    job=PrintJob(account_id=account.id,marketplace=Marketplace.FLIPKART,status="completed",printer_profile_id=profile.id,is_test=True,is_simulation=True,renderer_key="flipkart_hybrid_tspl_v1",renderer_version="1.0.0-experimental",layout_version=1)
+    db.add(job);db.flush();line=PrintJobLine(print_job_id=job.id,label_count=1,data_snapshot={"format":"key_chain","fsn":"FSN1"});db.add(line);db.flush();db.add(BarcodeVerification(print_job_id=job.id,print_job_line_id=line.id,expected_value="FSN1",scanned_value="FSN1",passed=True));db.flush()
+    with pytest.raises(RendererApprovalError):RendererApprovalService(db).approve(profile,job,format_key="pendant_locket")
+    job.is_simulation=False
+    with pytest.raises(RendererApprovalError):RendererApprovalService(db).approve(profile,job,format_key="pendant_locket")

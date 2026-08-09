@@ -5,6 +5,7 @@ from io import BytesIO
 from typing import Any, Protocol
 
 from PIL import Image
+from app.services.label_field_resolution import canonical_field_key
 
 
 class RendererError(ValueError):
@@ -74,9 +75,9 @@ def validate_barcode(value: Any, *, max_length: int = 80) -> str:
 
 def snapshot_value(snapshot: dict, name: str, default=None):
     fields = snapshot.get("label_fields") or {}
-    wanted = name.replace("_", " ").casefold()
+    wanted = canonical_field_key(name)
     for key, value in fields.items():
-        if str(key).replace("_", " ").casefold() == wanted:
+        if canonical_field_key(key) == wanted:
             return value
     return snapshot.get(name, default)
 

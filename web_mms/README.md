@@ -8,7 +8,7 @@ Install Docker Desktop and Node.js, then run `START_MMS_WEB.bat`. It starts Post
 
 Phase 3 adds production label compilation and a paired Windows local print agent. Install and pair it from `print_agent`, then launch it with `START_MMS_PRINT_AGENT.bat`.
 
-Real transport is intentionally off by default. Enable `MMS_PRINT_TRANSPORT_ENABLED=true` on the server and both `MMS_AGENT_TRANSPORT_ENABLED=true` and `MMS_AGENT_DRY_RUN=false` on a validated printing PC only after completing `docs/RENDERER_APPROVAL_WORKFLOW.md`.
+Real transport is intentionally off by default. Phase 3.1 additionally requires local authentication, a strong secret, secure cookies, a ready printer, and exact physically tested approvals. Complete `docs/PRODUCTION_ENABLEMENT_CHECKLIST.md`; do not enable transport before TSC validation.
 
 ## Verification
 

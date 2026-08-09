@@ -7,8 +7,11 @@ from sqlalchemy.orm import Session
 from app.db.base import Base
 from app.models import CatalogIdentifier, CatalogProduct, Marketplace, MarketplaceAccount
 from app.renderers.amazon_dynamic_tspl_v1 import AmazonDynamicTSPLRenderer
+from app.renderers.amazon_dynamic_tspl_v2 import AmazonDynamicTSPLRendererV2
 from app.renderers.base import RendererError, format_mrp, plan_two_up
 from app.renderers.flipkart_hybrid_tspl_v1 import FORMAT_FIELDS, FlipkartHybridTSPLRenderer
+from app.renderers.flipkart_hybrid_tspl_v2 import FlipkartHybridTSPLRendererV2
+from app.renderers.font_registry import FONT_PATHS
 from app.services.consignment_matching import ConsignmentMatcher
 
 
@@ -73,6 +76,24 @@ def test_matcher_queries_are_bounded_and_do_not_load_account_catalog():
         db.flush(); statements.clear(); assert ConsignmentMatcher(db,owner.id).amazon("SKU-249",None,None).product is not None
     selects=[value.lower() for value in statements if value.lstrip().lower().startswith("select")]
     assert selects and all(" limit " in value for value in selects)
+
+
+def test_v2_five_copy_expansion_has_three_pairs_and_no_sixth_label(monkeypatch):
+    amazon=AmazonDynamicTSPLRendererV2().render([amazon_snapshot(5)],profile("amazon_dynamic_tspl_v2"))
+    monkeypatch.setitem(FONT_PATHS,"mms_default_sans",[Path(font_path())])
+    flip_profile=profile("flipkart_hybrid_tspl_v2");flip_profile["config"].pop("font_path");flip_profile["config"]["font_key"]="mms_default_sans"
+    flipkart=FlipkartHybridTSPLRendererV2().render([flipkart_snapshot(copies=5)],flip_profile)
+    assert amazon.label_count==flipkart.label_count==5
+    assert amazon.diagnostics["pairs"]==flipkart.diagnostics["pairs"]==3
+    assert amazon.diagnostics["odd_final_label"] is flipkart.diagnostics["odd_final_label"] is True
+    assert amazon.raw_bytes.count(b"PRINT 1,1")==flipkart.raw_bytes.count(b"PRINT 1,1")==3
+
+
+def test_flipkart_v2_diagnostics_capture_logical_font_identity(monkeypatch):
+    monkeypatch.setitem(FONT_PATHS,"mms_default_sans",[Path(font_path())]);config=profile("flipkart_hybrid_tspl_v2");config["config"].pop("font_path");config["config"]["font_key"]="mms_default_sans"
+    result=FlipkartHybridTSPLRendererV2().render([flipkart_snapshot()],config)
+    assert result.diagnostics["layout"]["font_key"]=="mms_default_sans"
+    assert len(result.diagnostics["layout"]["font_sha256"])==64
 
 
 def test_phase3_migration_is_explicit_and_stacked():

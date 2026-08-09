@@ -17,3 +17,10 @@ def test_phase2_migration_is_explicit_and_stacked():
     assert "consignment_issues" in migration
     assert "print_job_events" in migration
     assert "selected_for_print" in migration and "server_default=sa.false()" in migration
+
+
+def test_phase3_1_migration_is_explicit_and_stacked():
+    migration = Path("alembic/versions/20260811_0004_phase3_1_production_gate.py").read_text()
+    assert 'down_revision="20260810_0003"' in migration
+    assert "font_fingerprint" in migration and "last_error" in migration
+    assert "'Admin'" in migration and "'Print Operator'" in migration

@@ -13,6 +13,15 @@ class RawSpooler(Protocol):
     def spool(self, printer_name: str, data: bytes, document_name: str) -> str: ...
 
 
+def normalize_printer_status(flags:int)->tuple[str,str|None]:
+    if flags&0x00000010:return "paper_out","Windows queue reports paper out."
+    if flags&0x00000001:return "paused","Windows queue is paused."
+    if flags&0x00000080:return "offline","Windows queue is offline."
+    if flags&(0x00000002|0x00000008|0x00000040|0x00000200|0x00400000):return "error",f"Windows printer status flags: 0x{flags:08x}"
+    if flags==0:return "ready",None
+    return "unknown",f"Unmapped Windows printer status flags: 0x{flags:08x}"
+
+
 class WindowsRawSpooler:
     def discover(self) -> list[dict]:
         import win32print
@@ -20,12 +29,15 @@ class WindowsRawSpooler:
         default = win32print.GetDefaultPrinter()
         result = []
         for _flags, description, name, comment in win32print.EnumPrinters(flags):
-            handle = win32print.OpenPrinter(name)
-            try: info = win32print.GetPrinter(handle, 2)
-            finally: win32print.ClosePrinter(handle)
-            port = str(info.get("pPortName") or "")
-            result.append({"name": name, "driver_name": str(info.get("pDriverName") or description or "Unknown"), "port_name": port,
-                "status": "online", "is_default": name == default, "is_network": port.startswith("\\\\")})
+            try:
+                handle = win32print.OpenPrinter(name)
+                try: info = win32print.GetPrinter(handle, 2)
+                finally: win32print.ClosePrinter(handle)
+                port=str(info.get("pPortName") or "");status,last_error=normalize_printer_status(int(info.get("Status") or 0))
+                result.append({"name":name,"driver_name":str(info.get("pDriverName") or description or "Unknown"),"port_name":port,
+                    "status":status,"last_error":last_error,"is_default":name==default,"is_network":port.startswith("\\\\")})
+            except OSError as exc:
+                result.append({"name":name,"driver_name":str(description or "Unknown"),"status":"error","last_error":str(exc),"is_default":name==default,"is_network":False})
         return result
 
     def spool(self, printer_name: str, data: bytes, document_name: str) -> str:

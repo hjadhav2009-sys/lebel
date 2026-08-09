@@ -9,6 +9,7 @@ from app.models import (PrintArtifact, PrintJob, PrintJobLine, Printer,
     PrinterProfile, RendererProfileApproval)
 from app.renderers import get_renderer
 from app.renderers.base import RendererError
+from app.renderers.font_registry import resolve_font
 from app.services.artifact_store import FileSystemPrintArtifactStore
 from app.services.print_state_service import transition
 
@@ -31,6 +32,9 @@ class PrintCompilationService:
         approvals=self.db.scalars(select(RendererProfileApproval).where(RendererProfileApproval.printer_profile_id==profile.id,
             RendererProfileApproval.renderer_key==renderer.key,RendererProfileApproval.renderer_version==renderer.version,
             RendererProfileApproval.layout_version==profile.layout_version,RendererProfileApproval.revoked_at.is_(None))).all()
+        if renderer.key=="flipkart_hybrid_tspl_v2":
+            fingerprint=resolve_font(str((profile.config or {}).get("font_key") or "mms_default_sans"))["font_sha256"]
+            approvals=[row for row in approvals if row.font_fingerprint==fingerprint]
         approved={row.format_key for row in approvals}
         return all(value in approved or None in approved for value in formats)
 

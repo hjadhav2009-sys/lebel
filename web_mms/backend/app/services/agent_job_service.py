@@ -22,7 +22,7 @@ class AgentJobService:
     def claim(self, agent: PrintAgent) -> tuple[PrintJob, PrintArtifact, str] | None:
         now = datetime.now(timezone.utc)
         query = (select(PrintJob).join(PrinterProfile, PrinterProfile.id == PrintJob.printer_profile_id).join(Printer, Printer.id == PrinterProfile.printer_id)
-            .where(Printer.agent_id == agent.id, Printer.is_enabled.is_(True), Printer.status == "online", or_(PrintJob.status == "waiting_for_agent", (PrintJob.status == "claimed") & (PrintJob.lease_expires_at < now)))
+            .where(Printer.agent_id == agent.id, Printer.is_enabled.is_(True), Printer.status == "ready", or_(PrintJob.status == "waiting_for_agent", (PrintJob.status == "claimed") & (PrintJob.lease_expires_at < now)))
             .order_by(PrintJob.created_at).with_for_update(skip_locked=True).limit(1))
         job = self.db.scalar(query)
         if not job:
